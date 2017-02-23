@@ -1,8 +1,9 @@
 Source: iproute2
 Section: net
 Priority: optional
-Maintainer: Debian iproute2 Maintainers <ah-iproute@debian.org>
-Uploaders: Andreas Henriksson <andreas@fatal.se>,
+Maintainer: Pexip AS <packaging@pexip.com>
+XSBC-Pexip-Original-Maintainer: Debian iproute2 Maintainers <ah-iproute@debian.org>
+XSBC-Pexip-Original-Uploaders: Andreas Henriksson <andreas@fatal.se>,
            Alexander Wirt <formorer@debian.org>
 Homepage: http://www.linux-foundation.org/en/Net:Iproute2
 Vcs-Browser: http://git.debian.org/?p=collab-maint/pkg-iproute.git
@@ -23,6 +24,7 @@ Build-Depends: bison,
                texlive-fonts-recommended,
                texlive-latex-base,
                texlive-latex-recommended
+XS-Pexip-Upstream: http://ftp.debian.org/debian/ jessie
 
 Package: iproute2
 Priority: important
