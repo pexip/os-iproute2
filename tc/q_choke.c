@@ -34,18 +34,16 @@ static void explain(void)
 static int choke_parse_opt(struct qdisc_util *qu, int argc, char **argv,
 			   struct nlmsghdr *n)
 {
-	struct tc_red_qopt opt;
-	unsigned burst = 0;
-	unsigned avpkt = 1000;
+	struct tc_red_qopt opt = {};
+	unsigned int burst = 0;
+	unsigned int avpkt = 1000;
 	double probability = 0.02;
-	unsigned rate = 0;
+	unsigned int rate = 0;
 	int ecn_ok = 0;
 	int wlog;
 	__u8 sbuf[256];
 	__u32 max_P;
 	struct rtattr *tail;
-
-	memset(&opt, 0, sizeof(opt));
 
 	while (argc > 0) {
 		if (strcmp(*argv, "limit") == 0) {
@@ -108,11 +106,11 @@ static int choke_parse_opt(struct qdisc_util *qu, int argc, char **argv,
 		return -1;
 	}
 
-	/* Compute default min/max thresholds based on 
+	/* Compute default min/max thresholds based on
 	   Sally Floyd's recommendations:
 	   http://www.icir.org/floyd/REDparameters.txt
 	*/
-	if (!opt.qth_max) 
+	if (!opt.qth_max)
 		opt.qth_max = opt.limit / 4;
 	if (!opt.qth_min)
 		opt.qth_min = opt.qth_max / 3;

@@ -6,12 +6,10 @@ Subject: Add moo feature
  ip/ip.c |   15 +++++++++++++++
  1 file changed, 15 insertions(+)
 
-diff --git a/ip/ip.c b/ip/ip.c
-index e10ddb2..962fd87 100644
 --- a/ip/ip.c
 +++ b/ip/ip.c
-@@ -61,6 +61,20 @@ static int do_help(int argc, char **argv)
-         return 0;
+@@ -68,6 +68,20 @@
+ 	return 0;
  }
  
 +static int do_moo(int argc, char **argv)
@@ -31,7 +29,7 @@ index e10ddb2..962fd87 100644
  static const struct cmd {
  	const char *cmd;
  	int (*func)(int argc, char **argv);
-@@ -89,6 +103,7 @@ static const struct cmd {
+@@ -98,6 +112,7 @@
  	{ "netns",	do_netns },
  	{ "netconf",	do_ipnetconf },
  	{ "help",	do_help },
