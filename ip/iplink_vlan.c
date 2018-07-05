@@ -18,11 +18,10 @@
 #include "utils.h"
 #include "ip_common.h"
 
-static void explain(void)
+static void print_explain(FILE *f)
 {
-	fprintf(stderr,
-		"Usage: ... vlan [ protocol VLANPROTO ] id VLANID"
-		"                [ FLAG-LIST ]\n"
+	fprintf(f,
+		"Usage: ... vlan [ protocol VLANPROTO ] id VLANID                [ FLAG-LIST ]\n"
 		"                [ ingress-qos-map QOS-MAP ] [ egress-qos-map QOS-MAP ]\n"
 		"\n"
 		"VLANPROTO: [ 802.1Q / 802.1ad ]\n"
@@ -33,6 +32,11 @@ static void explain(void)
 		"QOS-MAP := [ QOS-MAP ] QOS-MAPPING\n"
 		"QOS-MAPPING := FROM:TO\n"
 	);
+}
+
+static void explain(void)
+{
+	print_explain(stderr);
 }
 
 static int on_off(const char *msg, const char *arg)
@@ -177,7 +181,7 @@ static void vlan_print_flags(FILE *fp, __u32 flags)
 {
 	fprintf(fp, "<");
 #define _PF(f)	if (flags & VLAN_FLAG_##f) { \
-			flags &= ~ VLAN_FLAG_##f; \
+			flags &= ~VLAN_FLAG_##f; \
 			fprintf(fp, #f "%s", flags ? "," : ""); \
 		}
 	_PF(REORDER_HDR);
@@ -193,6 +197,7 @@ static void vlan_print_flags(FILE *fp, __u32 flags)
 static void vlan_print_opt(struct link_util *lu, FILE *f, struct rtattr *tb[])
 {
 	struct ifla_vlan_flags *flags;
+
 	SPRINT_BUF(b1);
 
 	if (!tb)
@@ -226,9 +231,16 @@ static void vlan_print_opt(struct link_util *lu, FILE *f, struct rtattr *tb[])
 		vlan_print_map(f, "egress-qos-map", tb[IFLA_VLAN_EGRESS_QOS]);
 }
 
+static void vlan_print_help(struct link_util *lu, int argc, char **argv,
+	FILE *f)
+{
+	print_explain(f);
+}
+
 struct link_util vlan_link_util = {
 	.id		= "vlan",
 	.maxattr	= IFLA_VLAN_MAX,
 	.parse_opt	= vlan_parse_opt,
 	.print_opt	= vlan_print_opt,
+	.print_help	= vlan_print_help,
 };

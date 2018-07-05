@@ -18,7 +18,7 @@
  * Author: Alexander Duyck <alexander.h.duyck@intel.com>
  *
  * Original Authors:	PJ Waskiewicz, <peter.p.waskiewicz.jr@intel.com> (RR)
- * 			Alexey Kuznetsov, <kuznet@ms2.inr.ac.ru> (from PRIO)
+ *			Alexey Kuznetsov, <kuznet@ms2.inr.ac.ru> (from PRIO)
  *
  */
 
@@ -77,7 +77,7 @@ static int multiq_print_opt(struct qdisc_util *qu, FILE *f, struct rtattr *opt)
 }
 
 struct qdisc_util multiq_qdisc_util = {
-	.id	 	= "multiq",
+	.id		= "multiq",
 	.parse_qopt	= multiq_parse_opt,
 	.print_qopt	= multiq_print_opt,
 };

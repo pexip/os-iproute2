@@ -1,15 +1,20 @@
-ROOTDIR=$(DESTDIR)
-PREFIX=/usr
-LIBDIR=$(PREFIX)/lib
-SBINDIR=/sbin
-CONFDIR=/etc/iproute2
-DATADIR=$(PREFIX)/share
-DOCDIR=$(DATADIR)/doc/iproute2
-MANDIR=$(DATADIR)/man
-ARPDDIR=/var/lib/arpd
+ifndef VERBOSE
+MAKEFLAGS += --no-print-directory
+endif
+
+PREFIX?=/usr
+LIBDIR?=$(PREFIX)/lib
+SBINDIR?=/sbin
+CONFDIR?=/etc/iproute2
+DATADIR?=$(PREFIX)/share
+DOCDIR?=$(DATADIR)/doc/iproute2
+MANDIR?=$(DATADIR)/man
+ARPDDIR?=/var/lib/arpd
+KERNEL_INCLUDE?=/usr/include
+BASH_COMPDIR?=$(DATADIR)/bash-completion/completions
 
 # Path to db_185.h include
-DBM_INCLUDE:=$(ROOTDIR)/usr/include
+DBM_INCLUDE:=$(DESTDIR)/usr/include
 
 SHARED_LIBS = y
 
@@ -26,17 +31,22 @@ ADDLIB+=dnet_ntop.o dnet_pton.o
 #options for ipx
 ADDLIB+=ipx_ntop.o ipx_pton.o
 
-CC = gcc
-HOSTCC = gcc
+#options for mpls
+ADDLIB+=mpls_ntop.o mpls_pton.o
+
+CC := gcc
+HOSTCC ?= $(CC)
 DEFINES += -D_GNU_SOURCE
+# Turn on transparent support for LFS
+DEFINES += -D_FILE_OFFSET_BITS=64 -D_LARGEFILE_SOURCE -D_LARGEFILE64_SOURCE
 CCOPTS = -O2
 WFLAGS := -Wall -Wstrict-prototypes  -Wmissing-prototypes
 WFLAGS += -Wmissing-declarations -Wold-style-definition -Wformat=2
 
-CFLAGS = $(WFLAGS) $(CCOPTS) -I../include $(DEFINES)
+CFLAGS := $(WFLAGS) $(CCOPTS) -I../include $(DEFINES) $(CFLAGS)
 YACCFLAGS = -d -t -v
 
-SUBDIRS=lib ip tc bridge misc netem genl man
+SUBDIRS=lib ip tc bridge misc netem genl tipc devlink man
 
 LIBNETLINK=../lib/libnetlink.a ../lib/libutil.a
 LDLIBS += $(LIBNETLINK)
@@ -44,7 +54,7 @@ LDLIBS += $(LIBNETLINK)
 all: Config
 	@set -e; \
 	for i in $(SUBDIRS); \
-	do $(MAKE) $(MFLAGS) -C $$i; done
+	do echo; echo $$i; $(MAKE) $(MFLAGS) -C $$i; done
 
 Config:
 	sh configure $(KERNEL_INCLUDE)
@@ -61,6 +71,8 @@ install: all
 		$(DESTDIR)$(DOCDIR)/examples/diffserv
 	@for i in $(SUBDIRS) doc; do $(MAKE) -C $$i install; done
 	install -m 0644 $(shell find etc/iproute2 -maxdepth 1 -type f) $(DESTDIR)$(CONFDIR)
+	install -m 0755 -d $(DESTDIR)$(BASH_COMPDIR)
+	install -m 0644 bash-completion/tc $(DESTDIR)$(BASH_COMPDIR)
 
 snapshot:
 	echo "static const char SNAPSHOT[] = \""`date +%y%m%d`"\";" \

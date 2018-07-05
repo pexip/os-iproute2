@@ -8,8 +8,8 @@
  *
  * Authors:	J Hadi Salim <jhs@mojatatu.com>
  *
- * Pedagogical example. Adds a string that will be printed everytime
- * the simple instance is hit. 
+ * Pedagogical example. Adds a string that will be printed every time
+ * the simple instance is hit.
  * Use this as a skeleton action and keep modifying it to meet your needs.
  * Look at linux/tc_act/tc_defact.h for the different components ids and
  * definitions used in  this actions
@@ -26,20 +26,20 @@
  *
   hadi@noma1:$ tc qdisc add dev eth0 ingress
   hadi@noma1:$tc filter add dev eth0 parent ffff: protocol ip prio 5 \
-   	 u32 match ip protocol 1 0xff flowid 1:1 action simple "Incoming ICMP"
-  
+	 u32 match ip protocol 1 0xff flowid 1:1 action simple "Incoming ICMP"
+
   hadi@noma1:$ sudo tc -s filter ls  dev eth0 parent ffff:
-   filter protocol ip pref 5 u32 
-   filter protocol ip pref 5 u32 fh 800: ht divisor 1 
-   filter protocol ip pref 5 u32 fh 800::800 order 2048 key ht 800 bkt 0 flowid 1:1 
+   filter protocol ip pref 5 u32
+   filter protocol ip pref 5 u32 fh 800: ht divisor 1
+   filter protocol ip pref 5 u32 fh 800::800 order 2048 key ht 800 bkt 0 flowid 1:1
      match 00010000/00ff0000 at 8
-     	action order 1: Simple <Incoming ICMP>
-     	 index 4 ref 1 bind 1 installed 29 sec used 29 sec
-     	 Action statistics:
-     		Sent 0 bytes 0 pkt (dropped 0, overlimits 0 requeues 0) 
-     	 	backlog 0b 0p requeues 0 
-  
-  
+	action order 1: Simple <Incoming ICMP>
+	 index 4 ref 1 bind 1 installed 29 sec used 29 sec
+	 Action statistics:
+		Sent 0 bytes 0 pkt (dropped 0, overlimits 0 requeues 0)
+		backlog 0b 0p requeues 0
+
+
   hadi@noma1$ ping -c 1 www.google.ca
   PING www.google.ca (74.125.225.120) 56(84) bytes of data.
   64 bytes from ord08s08-in-f24.1e100.net (74.125.225.120): icmp_req=1 ttl=53 time=31.3 ms
@@ -52,15 +52,15 @@
   [135354.473951] simple: Incoming ICMP_1
 
   hadi@noma1$ sudo tc/tc -s filter ls  dev eth0 parent ffff:
-  filter protocol ip pref 5 u32 
-  filter protocol ip pref 5 u32 fh 800: ht divisor 1 
-  filter protocol ip pref 5 u32 fh 800::800 order 2048 key ht 800 bkt 0 flowid 1:1 
+  filter protocol ip pref 5 u32
+  filter protocol ip pref 5 u32 fh 800: ht divisor 1
+  filter protocol ip pref 5 u32 fh 800::800 order 2048 key ht 800 bkt 0 flowid 1:1
     match 00010000/00ff0000 at 8
 	action order 1: Simple <Incoming ICMP>
 	 index 4 ref 1 bind 1 installed 206 sec used 67 sec
 	Action statistics:
-	Sent 84 bytes 1 pkt (dropped 0, overlimits 0 requeues 0) 
-	backlog 0b 0p requeues 0 
+	Sent 84 bytes 1 pkt (dropped 0, overlimits 0 requeues 0)
+	backlog 0b 0p requeues 0
 */
 
 #include <stdio.h>
@@ -81,9 +81,10 @@
 #endif
 static void explain(void)
 {
-	fprintf(stderr, "Usage: ... simple STRING\n"
-		"STRING being an arbitrary string\n" 
-		"example: \"simple blah\"\n");
+	fprintf(stderr, "Usage:... simple [sdata STRING] [CONTROL] [index INDEX]\n");
+	fprintf(stderr, "\tSTRING being an arbitrary string\n"
+		"\tCONTROL := reclassify|pipe|drop|continue|ok\n"
+		"\tINDEX := optional index value used\n");
 }
 
 static void usage(void)
@@ -103,21 +104,37 @@ parse_simple(struct action_util *a, int *argc_p, char ***argv_p, int tca_id,
 	struct rtattr *tail;
 	char *simpdata = NULL;
 
-
 	while (argc > 0) {
 		if (matches(*argv, "simple") == 0) {
 			NEXT_ARG();
+		} else if (matches(*argv, "sdata") == 0) {
+			NEXT_ARG();
+			ok += 1;
 			simpdata = *argv;
-			ok = 1;
 			argc--;
 			argv++;
-			break;
 		} else if (matches(*argv, "help") == 0) {
 			usage();
 		} else {
 			break;
 		}
+	}
 
+	if (argc && !action_a2n(*argv, &sel.action, false))
+		NEXT_ARG_FWD();
+
+	if (argc) {
+		if (matches(*argv, "index") == 0) {
+			NEXT_ARG();
+			if (get_u32(&sel.index, *argv, 10)) {
+				fprintf(stderr, "simple: Illegal \"index\" (%s)\n",
+					*argv);
+				return -1;
+			}
+			ok += 1;
+			argc--;
+			argv++;
+		}
 	}
 
 	if (!ok) {
@@ -125,20 +142,8 @@ parse_simple(struct action_util *a, int *argc_p, char ***argv_p, int tca_id,
 		return -1;
 	}
 
-	if (argc) {
-		if (matches(*argv, "index") == 0) {
-			NEXT_ARG();
-			if (get_u32(&sel.index, *argv, 10)) {
-				fprintf(stderr, "simple: Illegal \"index\"\n");
-				return -1;
-			}
-			argc--;
-			argv++;
-		}
-	}
-
-	if (strlen(simpdata) > (SIMP_MAX_DATA - 1)) {
-		fprintf(stderr, "simple: Illegal string len %ld <%s> \n",
+	if (simpdata && (strlen(simpdata) > (SIMP_MAX_DATA - 1))) {
+		fprintf(stderr, "simple: Illegal string len %zu <%s>\n",
 			strlen(simpdata), simpdata);
 		return -1;
 	}
@@ -148,7 +153,8 @@ parse_simple(struct action_util *a, int *argc_p, char ***argv_p, int tca_id,
 	tail = NLMSG_TAIL(n);
 	addattr_l(n, MAX_MSG, tca_id, NULL, 0);
 	addattr_l(n, MAX_MSG, TCA_DEF_PARMS, &sel, sizeof(sel));
-	addattr_l(n, MAX_MSG, TCA_DEF_DATA, simpdata, SIMP_MAX_DATA);
+	if (simpdata)
+		addattr_l(n, MAX_MSG, TCA_DEF_DATA, simpdata, SIMP_MAX_DATA);
 	tail->rta_len = (char *)NLMSG_TAIL(n) - (char *)tail;
 
 	*argc_p = argc;
@@ -156,7 +162,7 @@ parse_simple(struct action_util *a, int *argc_p, char ***argv_p, int tca_id,
 	return 0;
 }
 
-static int print_simple(struct action_util *au, FILE * f, struct rtattr *arg)
+static int print_simple(struct action_util *au, FILE *f, struct rtattr *arg)
 {
 	struct tc_defact *sel;
 	struct rtattr *tb[TCA_DEF_MAX + 1];
@@ -187,6 +193,7 @@ static int print_simple(struct action_util *au, FILE * f, struct rtattr *arg)
 	if (show_stats) {
 		if (tb[TCA_DEF_TM]) {
 			struct tcf_t *tm = RTA_DATA(tb[TCA_DEF_TM]);
+
 			print_tm(f, tm);
 		}
 	}
