@@ -24,7 +24,7 @@ Build-Depends: bison,
                texlive-fonts-recommended,
                texlive-latex-base,
                texlive-latex-recommended
-XS-Pexip-Upstream: http://ftp.debian.org/debian/ jessie
+XS-Pexip-Upstream: http://ftp.debian.org/debian/ stretch
 
 Package: iproute2
 Priority: important
