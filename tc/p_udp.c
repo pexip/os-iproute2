@@ -24,7 +24,7 @@
 #include "m_pedit.h"
 
 static int
-parse_udp(int *argc_p, char ***argv_p,struct tc_pedit_sel *sel,struct tc_pedit_key *tkey)
+parse_udp(int *argc_p, char ***argv_p, struct tc_pedit_sel *sel, struct tc_pedit_key *tkey)
 {
 	int res = -1;
 	return res;
@@ -35,4 +35,3 @@ struct m_pedit_util p_pedit_udp = {
 	"udp",
 	parse_udp,
 };
-

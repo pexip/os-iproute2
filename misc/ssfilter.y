@@ -25,6 +25,7 @@ static char		**yy_argv;
 static int		yy_argc;
 static FILE		*yy_fp;
 static ssfilter_t	*yy_ret;
+static int tok_type = -1;
 
 static int yylex(void);
 
@@ -35,7 +36,7 @@ static void yyerror(char *s)
 
 %}
 
-%token HOSTCOND DCOND SCOND DPORT SPORT LEQ GEQ NEQ AUTOBOUND
+%token HOSTCOND DCOND SCOND DPORT SPORT LEQ GEQ NEQ AUTOBOUND DEVCOND DEVNAME MARKMASK FWMARK
 %left '|'
 %left '&'
 %nonassoc '!'
@@ -107,7 +108,22 @@ expr:	DCOND HOSTCOND
         {
 		$$ = alloc_node(SSF_NOT, alloc_node(SSF_SCOND, $3));
         }
-
+        | DEVNAME '=' DEVCOND
+        {
+		$$ = alloc_node(SSF_DEVCOND, $3);
+        }
+        | DEVNAME NEQ DEVCOND
+        {
+		$$ = alloc_node(SSF_NOT, alloc_node(SSF_DEVCOND, $3));
+        }
+        | FWMARK '=' MARKMASK
+        {
+                $$ = alloc_node(SSF_MARKMASK, $3);
+        }
+        | FWMARK NEQ MARKMASK
+        {
+                $$ = alloc_node(SSF_NOT, alloc_node(SSF_MARKMASK, $3));
+        }
         | AUTOBOUND
         {
                 $$ = alloc_node(SSF_S_AUTO, NULL);
@@ -220,14 +236,30 @@ int yylex(void)
 		return '(';
 	if (strcmp(curtok, ")") == 0)
 		return ')';
-	if (strcmp(curtok, "dst") == 0)
+	if (strcmp(curtok, "dst") == 0) {
+		tok_type = DCOND;
 		return DCOND;
-	if (strcmp(curtok, "src") == 0)
+	}
+	if (strcmp(curtok, "src") == 0) {
+                tok_type = SCOND;
 		return SCOND;
-	if (strcmp(curtok, "dport") == 0)
+        }
+	if (strcmp(curtok, "dport") == 0) {
+		tok_type = DPORT;
 		return DPORT;
-	if (strcmp(curtok, "sport") == 0)
+	}
+	if (strcmp(curtok, "sport") == 0) {
+		tok_type = SPORT;
 		return SPORT;
+	}
+	if (strcmp(curtok, "dev") == 0) {
+		tok_type = DEVNAME;
+		return DEVNAME;
+	}
+	if (strcmp(curtok, "fwmark") == 0) {
+		tok_type = FWMARK;
+		return FWMARK;
+	}
 	if (strcmp(curtok, ">=") == 0 ||
 	    strcmp(curtok, "ge") == 0 ||
 	    strcmp(curtok, "geq") == 0)
@@ -250,9 +282,27 @@ int yylex(void)
 	if (strcmp(curtok, "<") == 0 ||
 	    strcmp(curtok, "lt") == 0)
 		return '<';
-	if (strcmp(curtok, "autobound") == 0)
+	if (strcmp(curtok, "autobound") == 0) {
+		tok_type = AUTOBOUND;
 		return AUTOBOUND;
-	yylval = (void*)parse_hostcond(curtok);
+	}
+	if (tok_type == DEVNAME) {
+		yylval = (void*)parse_devcond(curtok);
+		if (yylval == NULL) {
+			fprintf(stderr, "Cannot parse device.\n");
+			exit(1);
+		}
+		return DEVCOND;
+	}
+	if (tok_type == FWMARK) {
+		yylval = (void*)parse_markmask(curtok);
+		if (yylval == NULL) {
+			fprintf(stderr, "Cannot parse mark %s.\n", curtok);
+			exit(1);
+		}
+		return MARKMASK;
+	}
+	yylval = (void*)parse_hostcond(curtok, tok_type == SPORT || tok_type == DPORT);
 	if (yylval == NULL) {
 		fprintf(stderr, "Cannot parse dst/src address.\n");
 		exit(1);

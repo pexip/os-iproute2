@@ -1,3 +1,105 @@
+iproute2 (4.9.0-1+deb9u1) stretch; urgency=medium
+
+  * Backport upstream commit 97a02cabef to fix segfault with iptables 1.6;
+    the xtables_globals structure needs to have its new member compat_rev
+    initialized. (Closes: #868059)
+  * Sync include/xtables.h from iptables to make sure the right offset is
+    used when accessing structure members defined in libxtables. One could
+    get “Extension does not know id …” otherwise. (See also: #868059)
+
+ -- Cyril Brulebois <cyril@debamax.com>  Fri, 24 Nov 2017 09:22:10 +0000
+
+iproute2 (4.9.0-1) unstable; urgency=medium
+
+  * New upstream release, tested by Julian Wollrath.
+
+ -- Andreas Henriksson <andreas@fatal.se>  Tue, 13 Dec 2016 16:57:50 +0100
+
+iproute2 (4.8.0-1) unstable; urgency=medium
+
+  * Fix debian/gbp.conf to import upstream tag on import-orig
+  * New upstream release.
+  * Ship upstream iproute2 docs in iproute2-doc package
+
+ -- Andreas Henriksson <andreas@fatal.se>  Wed, 26 Oct 2016 16:07:30 +0200
+
+iproute2 (4.6.0-4) unstable; urgency=medium
+
+  * Fix conflict resolution, really remove ifstat binary (Closes: #832573)
+
+ -- Andreas Henriksson <andreas@fatal.se>  Tue, 16 Aug 2016 09:48:05 +0200
+
+iproute2 (4.6.0-3) unstable; urgency=medium
+
+  * Team upload.
+
+  [ Laurent Bigonville ]
+  * debian/control: Downgrade transitional packages to Priority extra
+
+  [ Andreas Henriksson ]
+  * Revert "Install ifstat executable and manpage" (Closes: #832573)
+
+ -- Andreas Henriksson <andreas@fatal.se>  Mon, 15 Aug 2016 17:36:13 +0200
+
+iproute2 (4.6.0-2) unstable; urgency=medium
+
+  * Team upload.
+  [ Julian Wollrath ]
+  * Bump standards version to 3.9.8 (no changes needed)
+  * Use at least debhelper version 9 (Closes: #672828)
+  * Add build-dep on libelf-dev (Closes: #812774)
+  * Add build-dep on libmnl-dev
+  * Install tipc and devlink executables (Closes: #803922)
+
+  [ Laurent Bigonville ]
+  * debian/iproute2.install, debian/iproute2.manpages: Rely on upstream build
+    system to install the files and do not pick them from the source directory
+  * debian/iproute2.install: Install the bash completion file
+  * debian/iproute2.manpages: Install the devlink and genl manpages not
+    installed by the upstream build system
+  * Install ifstat executable and manpage
+  * Run wrap-and-sort script
+  * debian/control: Update the Homepage URL
+
+ -- Laurent Bigonville <bigon@debian.org>  Tue, 26 Jul 2016 18:43:10 +0200
+
+iproute2 (4.6.0-1) unstable; urgency=medium
+
+  [ Julian Wollrath ]
+  * Imported upstream version 4.6.0:
+    - Add build-dep on texlive-latex-extra for fullpage
+  * Remove debian/patches/f_u32
+  * Change VCS URLs to the canonical ones
+
+ -- Andreas Henriksson <andreas@fatal.se>  Sat, 09 Jul 2016 13:17:22 +0200
+
+iproute2 (4.3.0-1) unstable; urgency=medium
+
+  * Add debian/gbp.conf
+  * Imported Upstream version 4.3.0
+  * Have quilt unfuzz debian/patches/0001-Add-moo-feature.patch
+  * Ship new generic netlink utility: genl
+  * Ship examples via debian/iproute2-doc.examples instead
+  * Add myself to debian/copyright
+
+ -- Andreas Henriksson <andreas@fatal.se>  Thu, 26 Nov 2015 18:34:59 +0100
+
+iproute2 (4.1.1-1) unstable; urgency=medium
+
+  * [be9f298] Imported Upstream version 4.1.1
+
+ -- Alexander Wirt <formorer@debian.org>  Mon, 17 Aug 2015 16:10:46 +0200
+
+iproute2 (4.0.0-1) unstable; urgency=medium
+
+  * [6dd90fb] Imported Upstream version 4.0.0
+  * [03b830b] Remove obsolete patch 
+              0003-ip-link-Remove-unnecessary-device-checking
+  * [8c27170] Refresh patches
+  * [0c99cce] Bump standards version (no changes)
+
+ -- Alexander Wirt <formorer@debian.org>  Wed, 24 Jun 2015 10:01:45 +0200
+
 iproute2 (3.16.0-2pexip1) pexip; urgency=low
 
   * Prepare Pexip packaging
@@ -1123,6 +1225,3 @@ iproute (961225-1) unstable; urgency=low
 
  -- Tom Lees <tom@lpsg.demon.co.uk>  Mon, 30 Dec 1996 11:12:23 +0000
 
-Local variables:
-mode: debian-changelog
-End:

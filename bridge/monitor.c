@@ -35,18 +35,8 @@ static void usage(void)
 	exit(-1);
 }
 
-static int show_mark(FILE *fp, const struct nlmsghdr *n)
-{
-	char *tstr;
-	time_t secs = ((__u32*)NLMSG_DATA(n))[0];
-	long usecs = ((__u32*)NLMSG_DATA(n))[1];
-	tstr = asctime(localtime(&secs));
-	tstr[strlen(tstr)-1] = 0;
-	fprintf(fp, "Timestamp: %s %lu us\n", tstr, usecs);
-	return 0;
-}
-
 static int accept_msg(const struct sockaddr_nl *who,
+		      struct rtnl_ctrl_data *ctrl,
 		      struct nlmsghdr *n, void *arg)
 {
 	FILE *fp = arg;
@@ -74,23 +64,22 @@ static int accept_msg(const struct sockaddr_nl *who,
 			fprintf(fp, "[MDB]");
 		return print_mdb(who, n, arg);
 
-	case 15:
-		return show_mark(fp, n);
+	case NLMSG_TSTAMP:
+		print_nlmsg_timestamp(fp, n);
+		return 0;
 
 	default:
 		return 0;
 	}
-
-
 }
 
 int do_monitor(int argc, char **argv)
 {
 	char *file = NULL;
-	unsigned groups = ~RTMGRP_TC;
-	int llink=0;
-	int lneigh=0;
-	int lmdb=0;
+	unsigned int groups = ~RTMGRP_TC;
+	int llink = 0;
+	int lneigh = 0;
+	int lmdb = 0;
 
 	rtnl_close(&rth);
 
@@ -99,7 +88,7 @@ int do_monitor(int argc, char **argv)
 			NEXT_ARG();
 			file = *argv;
 		} else if (matches(*argv, "link") == 0) {
-			llink=1;
+			llink = 1;
 			groups = 0;
 		} else if (matches(*argv, "fdb") == 0) {
 			lneigh = 1;
@@ -109,7 +98,7 @@ int do_monitor(int argc, char **argv)
 			groups = 0;
 		} else if (strcmp(*argv, "all") == 0) {
 			groups = ~RTMGRP_TC;
-			prefix_banner=1;
+			prefix_banner = 1;
 		} else if (matches(*argv, "help") == 0) {
 			usage();
 		} else {
@@ -133,6 +122,7 @@ int do_monitor(int argc, char **argv)
 	if (file) {
 		FILE *fp;
 		int err;
+
 		fp = fopen(file, "r");
 		if (fp == NULL) {
 			perror("Cannot fopen");
@@ -152,4 +142,3 @@ int do_monitor(int argc, char **argv)
 
 	return 0;
 }
-

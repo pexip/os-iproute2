@@ -19,21 +19,23 @@
 #include "utils.h"
 #include "ip_common.h"
 
-static void explain(void)
+static void print_explain(FILE *f)
 {
-	fprintf(stderr,
-		"Usage: ... ipoib [pkey PKEY] [mode {datagram | connected}]"
-		"[umcast {0|1}]\n"
+	fprintf(f,
+		"Usage: ... ipoib [pkey PKEY] [mode {datagram | connected}][umcast {0|1}]\n"
 		"\n"
 		"PKEY  := 0x8001-0xffff\n"
 	);
 }
 
+static void explain(void)
+{
+	print_explain(stderr);
+}
 
 static int mode_arg(void)
 {
-	fprintf(stderr, "Error: argument of \"mode\" must be \"datagram\""
-		"or \"connected\"\n");
+	fprintf(stderr, "Error: argument of \"mode\" must be \"datagram\"or \"connected\"\n");
 	return -1;
 }
 
@@ -106,9 +108,16 @@ static void ipoib_print_opt(struct link_util *lu, FILE *f, struct rtattr *tb[])
 	fprintf(f, "umcast  %.4x ", rta_getattr_u16(tb[IFLA_IPOIB_UMCAST]));
 }
 
+static void ipoib_print_help(struct link_util *lu, int argc, char **argv,
+	FILE *f)
+{
+	print_explain(f);
+}
+
 struct link_util ipoib_link_util = {
 	.id		= "ipoib",
 	.maxattr	= IFLA_IPOIB_MAX,
 	.parse_opt	= ipoib_parse_opt,
 	.print_opt	= ipoib_print_opt,
+	.print_help	= ipoib_print_help,
 };
