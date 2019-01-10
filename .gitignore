@@ -1,6 +1,7 @@
+# locally generated
+Config
 static-syms.h
 config.*
-Config
 *.o
 *.a
 *.so
@@ -36,13 +37,5 @@ series
 # tests
 testsuite/results
 testsuite/iproute2/iproute2-this
-
-# doc files generated at runtime
-doc/*.aux
-doc/*.log
-doc/*.toc
-doc/*.ps
-doc/*.dvi
-doc/*.html
-doc/*.pdf
-doc/*.out
+testsuite/tools/generate_nlmsg
+testsuite/tests/ip/link/dev_wo_vf_rate.nl

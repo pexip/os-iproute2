@@ -13,12 +13,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
-#include <syslog.h>
 #include <fcntl.h>
 #include <string.h>
 #include <sys/time.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <errno.h>
 
 #include "rt_names.h"
 #include "utils.h"
@@ -29,6 +29,10 @@ static struct {
 	int ifindex;
 } filter;
 
+static const char * const rp_filter_names[] = {
+	"off", "strict", "loose"
+};
+
 static void usage(void) __attribute__((noreturn));
 
 static void usage(void)
@@ -37,9 +41,12 @@ static void usage(void)
 	exit(-1);
 }
 
-static void print_onoff(FILE *f, const char *flag, __u32 val)
+static void print_onoff(FILE *fp, const char *flag, __u32 val)
 {
-	fprintf(f, "%s %s ", flag, val ? "on" : "off");
+	if (is_json_context())
+		print_bool(PRINT_JSON, flag, NULL, val);
+	else
+		fprintf(fp, "%s %s ", flag, val ? "on" : "off");
 }
 
 static struct rtattr *netconf_rta(struct netconfmsg *ncm)
@@ -48,18 +55,20 @@ static struct rtattr *netconf_rta(struct netconfmsg *ncm)
 				 + NLMSG_ALIGN(sizeof(struct netconfmsg)));
 }
 
-int print_netconf(const struct sockaddr_nl *who, struct rtnl_ctrl_data *ctrl,
-		  struct nlmsghdr *n, void *arg)
+int print_netconf(struct rtnl_ctrl_data *ctrl, struct nlmsghdr *n, void *arg)
 {
 	FILE *fp = (FILE *)arg;
 	struct netconfmsg *ncm = NLMSG_DATA(n);
 	int len = n->nlmsg_len;
 	struct rtattr *tb[NETCONFA_MAX+1];
+	int ifindex = 0;
 
 	if (n->nlmsg_type == NLMSG_ERROR)
 		return -1;
-	if (n->nlmsg_type != RTM_NEWNETCONF) {
-		fprintf(stderr, "Not RTM_NEWNETCONF: %08x %08x %08x\n",
+
+	if (n->nlmsg_type != RTM_NEWNETCONF &&
+	    n->nlmsg_type != RTM_DELNETCONF) {
+		fprintf(stderr, "Not a netconf message: %08x %08x %08x\n",
 			n->nlmsg_len, n->nlmsg_type, n->nlmsg_flags);
 
 		return -1;
@@ -76,49 +85,53 @@ int print_netconf(const struct sockaddr_nl *who, struct rtnl_ctrl_data *ctrl,
 	parse_rtattr(tb, NETCONFA_MAX, netconf_rta(ncm),
 		     NLMSG_PAYLOAD(n, sizeof(*ncm)));
 
-	switch (ncm->ncm_family) {
-	case AF_INET:
-		fprintf(fp, "ipv4 ");
-		break;
-	case AF_INET6:
-		fprintf(fp, "ipv6 ");
-		break;
-	default:
-		fprintf(fp, "unknown ");
-		break;
-	}
+	if (tb[NETCONFA_IFINDEX])
+		ifindex = rta_getattr_u32(tb[NETCONFA_IFINDEX]);
+
+	if (filter.ifindex && filter.ifindex != ifindex)
+		return 0;
+
+	open_json_object(NULL);
+	if (n->nlmsg_type == RTM_DELNETCONF)
+		print_bool(PRINT_ANY, "deleted", "Deleted ", true);
+
+	print_string(PRINT_ANY, "family",
+		     "%s ", family_name(ncm->ncm_family));
 
 	if (tb[NETCONFA_IFINDEX]) {
-		int *ifindex = (int *)rta_getattr_str(tb[NETCONFA_IFINDEX]);
+		const char *dev;
 
-		switch (*ifindex) {
+		switch (ifindex) {
 		case NETCONFA_IFINDEX_ALL:
-			fprintf(fp, "all ");
+			dev = "all";
 			break;
 		case NETCONFA_IFINDEX_DEFAULT:
-			fprintf(fp, "default ");
+			dev = "default";
 			break;
 		default:
-			fprintf(fp, "dev %s ", ll_index_to_name(*ifindex));
+			dev = ll_index_to_name(ifindex);
 			break;
 		}
+		print_color_string(PRINT_ANY, COLOR_IFNAME,
+				   "interface", "%s ", dev);
 	}
 
 	if (tb[NETCONFA_FORWARDING])
 		print_onoff(fp, "forwarding",
 				rta_getattr_u32(tb[NETCONFA_FORWARDING]));
+
 	if (tb[NETCONFA_RP_FILTER]) {
 		__u32 rp_filter = rta_getattr_u32(tb[NETCONFA_RP_FILTER]);
 
-		if (rp_filter == 0)
-			fprintf(fp, "rp_filter off ");
-		else if (rp_filter == 1)
-			fprintf(fp, "rp_filter strict ");
-		else if (rp_filter == 2)
-			fprintf(fp, "rp_filter loose ");
+		if (rp_filter < ARRAY_SIZE(rp_filter_names))
+			print_string(PRINT_ANY, "rp_filter",
+				     "rp_filter %s ",
+				     rp_filter_names[rp_filter]);
 		else
-			fprintf(fp, "rp_filter unknown mode ");
+			print_uint(PRINT_ANY, "rp_filter",
+				   "rp_filter %u ", rp_filter);
 	}
+
 	if (tb[NETCONFA_MC_FORWARDING])
 		print_onoff(fp, "mc_forwarding",
 				rta_getattr_u32(tb[NETCONFA_MC_FORWARDING]));
@@ -131,15 +144,18 @@ int print_netconf(const struct sockaddr_nl *who, struct rtnl_ctrl_data *ctrl,
 		print_onoff(fp, "ignore_routes_with_linkdown",
 		     rta_getattr_u32(tb[NETCONFA_IGNORE_ROUTES_WITH_LINKDOWN]));
 
-	fprintf(fp, "\n");
+	if (tb[NETCONFA_INPUT])
+		print_onoff(fp, "input", rta_getattr_u32(tb[NETCONFA_INPUT]));
+
+	close_json_object();
+	print_string(PRINT_FP, NULL, "\n", NULL);
 	fflush(fp);
 	return 0;
 }
 
-static int print_netconf2(const struct sockaddr_nl *who,
-			  struct nlmsghdr *n, void *arg)
+static int print_netconf2(struct nlmsghdr *n, void *arg)
 {
-	return print_netconf(who, NULL, n, arg);
+	return print_netconf(NULL, n, arg);
 }
 
 void ipnetconf_reset_filter(int ifindex)
@@ -162,15 +178,14 @@ static int do_show(int argc, char **argv)
 
 	ipnetconf_reset_filter(0);
 	filter.family = preferred_family;
-	if (filter.family == AF_UNSPEC)
-		filter.family = AF_INET;
 
 	while (argc > 0) {
 		if (strcmp(*argv, "dev") == 0) {
 			NEXT_ARG();
 			filter.ifindex = ll_name_to_index(*argv);
 			if (filter.ifindex <= 0) {
-				fprintf(stderr, "Device \"%s\" does not exist.\n",
+				fprintf(stderr,
+					"Device \"%s\" does not exist.\n",
 					*argv);
 				return -1;
 			}
@@ -179,11 +194,11 @@ static int do_show(int argc, char **argv)
 	}
 
 	ll_init_map(&rth);
-	if (filter.ifindex) {
+
+	if (filter.ifindex && filter.family != AF_UNSPEC) {
 		req.ncm.ncm_family = filter.family;
-		if (filter.ifindex)
-			addattr_l(&req.n, sizeof(req), NETCONFA_IFINDEX,
-				  &filter.ifindex, sizeof(filter.ifindex));
+		addattr_l(&req.n, sizeof(req), NETCONFA_IFINDEX,
+			  &filter.ifindex, sizeof(filter.ifindex));
 
 		if (rtnl_send(&rth, &req.n, req.n.nlmsg_len) < 0) {
 			perror("Can not send request");
@@ -191,16 +206,29 @@ static int do_show(int argc, char **argv)
 		}
 		rtnl_listen(&rth, print_netconf, stdout);
 	} else {
+		rth.flags = RTNL_HANDLE_F_SUPPRESS_NLERR;
 dump:
-		if (rtnl_wilddump_request(&rth, filter.family, RTM_GETNETCONF) < 0) {
+		if (rtnl_netconfdump_req(&rth, filter.family) < 0) {
 			perror("Cannot send dump request");
 			exit(1);
 		}
+
+		new_json_obj(json);
 		if (rtnl_dump_filter(&rth, print_netconf2, stdout) < 0) {
+			/* kernel does not support netconf dump on AF_UNSPEC;
+			 * fall back to requesting by family
+			 */
+			if (errno == EOPNOTSUPP &&
+			    filter.family == AF_UNSPEC) {
+				filter.family = AF_INET;
+				goto dump;
+			}
+			perror("RTNETLINK answers");
 			fprintf(stderr, "Dump terminated\n");
 			exit(1);
 		}
-		if (preferred_family == AF_UNSPEC) {
+		delete_json_obj();
+		if (preferred_family == AF_UNSPEC && filter.family == AF_INET) {
 			preferred_family = AF_INET6;
 			filter.family = AF_INET6;
 			goto dump;
@@ -221,6 +249,8 @@ int do_ipnetconf(int argc, char **argv)
 	} else
 		return do_show(0, NULL);
 
-	fprintf(stderr, "Command \"%s\" is unknown, try \"ip netconf help\".\n", *argv);
+	fprintf(stderr,
+		"Command \"%s\" is unknown, try \"ip netconf help\".\n",
+		*argv);
 	exit(-1);
 }

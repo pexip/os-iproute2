@@ -14,12 +14,12 @@
 #include <stdlib.h>
 #include <math.h>
 #include <unistd.h>
-#include <syslog.h>
 #include <fcntl.h>
 #include <limits.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <string.h>
+#include <ctype.h>
 #include <netdb.h>
 #include <arpa/inet.h>
 #include <asm/types.h>
@@ -27,15 +27,95 @@
 #include <linux/param.h>
 #include <linux/if_arp.h>
 #include <linux/mpls.h>
+#include <linux/snmp.h>
 #include <time.h>
 #include <sys/time.h>
 #include <errno.h>
+#ifdef HAVE_LIBCAP
+#include <sys/capability.h>
+#endif
 
 #include "rt_names.h"
 #include "utils.h"
+#include "ll_map.h"
 #include "namespace.h"
 
-int timestamp_short = 0;
+int resolve_hosts;
+int timestamp_short;
+int pretty;
+const char *_SL_ = "\n";
+
+static int af_byte_len(int af);
+static void print_time(char *buf, int len, __u32 time);
+static void print_time64(char *buf, int len, __s64 time);
+
+int read_prop(const char *dev, char *prop, long *value)
+{
+	char fname[128], buf[80], *endp, *nl;
+	FILE *fp;
+	long result;
+	int ret;
+
+	ret = snprintf(fname, sizeof(fname), "/sys/class/net/%s/%s",
+			dev, prop);
+
+	if (ret <= 0 || ret >= sizeof(fname)) {
+		fprintf(stderr, "could not build pathname for property\n");
+		return -1;
+	}
+
+	fp = fopen(fname, "r");
+	if (fp == NULL) {
+		fprintf(stderr, "fopen %s: %s\n", fname, strerror(errno));
+		return -1;
+	}
+
+	if (!fgets(buf, sizeof(buf), fp)) {
+		fprintf(stderr, "property \"%s\" in file %s is currently unknown\n", prop, fname);
+		fclose(fp);
+		goto out;
+	}
+
+	nl = strchr(buf, '\n');
+	if (nl)
+		*nl = '\0';
+
+	fclose(fp);
+	result = strtol(buf, &endp, 0);
+
+	if (*endp || buf == endp) {
+		fprintf(stderr, "value \"%s\" in file %s is not a number\n",
+			buf, fname);
+		goto out;
+	}
+
+	if ((result == LONG_MAX || result == LONG_MIN) && errno == ERANGE) {
+		fprintf(stderr, "strtol %s: %s", fname, strerror(errno));
+		goto out;
+	}
+
+	*value = result;
+	return 0;
+out:
+	fprintf(stderr, "Failed to parse %s\n", fname);
+	return -1;
+}
+
+/* Parse a percent e.g: '30%'
+ * return: 0 = ok, -1 = error, 1 = out of range
+ */
+int parse_percent(double *val, const char *str)
+{
+	char *p;
+
+	*val = strtod(str, &p) / 100.;
+	if (*val == HUGE_VALF || *val == HUGE_VALL)
+		return 1;
+	if (*p && strcmp(p, "%"))
+		return -1;
+
+	return 0;
+}
 
 int get_hex(char c)
 {
@@ -60,7 +140,7 @@ int get_integer(int *val, const char *arg, int base)
 	res = strtol(arg, &ptr, base);
 
 	/* If there were no digits at all, strtol()  stores
-         * the original value of nptr in *endptr (and returns 0).
+	 * the original value of nptr in *endptr (and returns 0).
 	 * In particular, if *nptr is not '\0' but **endptr is '\0' on return,
 	 * the entire string is valid.
 	 */
@@ -84,7 +164,7 @@ int get_integer(int *val, const char *arg, int base)
 
 int mask2bits(__u32 netmask)
 {
-	unsigned bits = 0;
+	unsigned int bits = 0;
 	__u32 mask = ntohl(netmask);
 	__u32 host = ~mask;
 
@@ -97,7 +177,7 @@ int mask2bits(__u32 netmask)
 	return bits;
 }
 
-static int get_netmask(unsigned *val, const char *arg, int base)
+static int get_netmask(unsigned int *val, const char *arg, int base)
 {
 	inet_prefix addr;
 
@@ -117,7 +197,7 @@ static int get_netmask(unsigned *val, const char *arg, int base)
 	return -1;
 }
 
-int get_unsigned(unsigned *val, const char *arg, int base)
+int get_unsigned(unsigned int *val, const char *arg, int base)
 {
 	unsigned long res;
 	char *ptr;
@@ -150,7 +230,7 @@ int get_unsigned(unsigned *val, const char *arg, int base)
  * pass milliseconds (standard unit for rtt values since 2.6.27), and
  * have a different assumption for the units of a "raw" number.
  */
-int get_time_rtt(unsigned *val, const char *arg, int *raw)
+int get_time_rtt(unsigned int *val, const char *arg, int *raw)
 {
 	double t;
 	unsigned long res;
@@ -188,23 +268,24 @@ int get_time_rtt(unsigned *val, const char *arg, int *raw)
 
 	if (*p) {
 		*raw = 0;
-                if (strcasecmp(p, "s") == 0 || strcasecmp(p, "sec")==0 ||
-                    strcasecmp(p, "secs")==0)
-                        t *= 1000;
-                else if (strcasecmp(p, "ms") == 0 || strcasecmp(p, "msec")==0 ||
-                         strcasecmp(p, "msecs") == 0)
+		if (strcasecmp(p, "s") == 0 ||
+		    strcasecmp(p, "sec") == 0 ||
+		    strcasecmp(p, "secs") == 0)
+			t *= 1000;
+		else if (strcasecmp(p, "ms") == 0 ||
+			 strcasecmp(p, "msec") == 0 ||
+			 strcasecmp(p, "msecs") == 0)
 			t *= 1.0; /* allow suffix, do nothing */
-                else
-                        return -1;
-        }
+		else
+			return -1;
+	}
 
 	/* emulate ceil() without having to bring-in -lm and always be >= 1 */
-
 	*val = t;
 	if (*val < t)
 		*val += 1;
 
-        return 0;
+	return 0;
 
 }
 
@@ -230,8 +311,8 @@ int get_u64(__u64 *val, const char *arg, int base)
 	if (res > 0xFFFFFFFFFFFFFFFFULL)
 		return -1;
 
- 	*val = res;
- 	return 0;
+	*val = res;
+	return 0;
 }
 
 int get_u32(__u32 *val, const char *arg, int base)
@@ -307,6 +388,27 @@ int get_u8(__u8 *val, const char *arg, int base)
 	return 0;
 }
 
+int get_s64(__s64 *val, const char *arg, int base)
+{
+	long res;
+	char *ptr;
+
+	errno = 0;
+
+	if (!arg || !*arg)
+		return -1;
+	res = strtoll(arg, &ptr, base);
+	if (!ptr || ptr == arg || *ptr)
+		return -1;
+	if ((res == LLONG_MIN || res == LLONG_MAX) && errno == ERANGE)
+		return -1;
+	if (res > INT64_MAX || res < INT64_MIN)
+		return -1;
+
+	*val = res;
+	return 0;
+}
+
 int get_s32(__s32 *val, const char *arg, int base)
 {
 	long res;
@@ -324,43 +426,6 @@ int get_s32(__s32 *val, const char *arg, int base)
 	if (res > INT32_MAX || res < INT32_MIN)
 		return -1;
 
-	*val = res;
-	return 0;
-}
-
-int get_s16(__s16 *val, const char *arg, int base)
-{
-	long res;
-	char *ptr;
-
-	if (!arg || !*arg)
-		return -1;
-	res = strtol(arg, &ptr, base);
-	if (!ptr || ptr == arg || *ptr)
-		return -1;
-	if ((res == LONG_MIN || res == LONG_MAX) && errno == ERANGE)
-		return -1;
-	if (res > 0x7FFF || res < -0x8000)
-		return -1;
-
-	*val = res;
-	return 0;
-}
-
-int get_s8(__s8 *val, const char *arg, int base)
-{
-	long res;
-	char *ptr;
-
-	if (!arg || !*arg)
-		return -1;
-	res = strtol(arg, &ptr, base);
-	if (!ptr || ptr == arg || *ptr)
-		return -1;
-	if ((res == LONG_MIN || res == LONG_MAX) && errno == ERANGE)
-		return -1;
-	if (res > 0x7F || res < -0x80)
-		return -1;
 	*val = res;
 	return 0;
 }
@@ -422,7 +487,7 @@ static int get_addr_ipv4(__u8 *ap, const char *cp)
 			break;
 
 		if (i == 3 || *endp != '.')
-			return -1; 	/* extra characters */
+			return -1;	/* extra characters */
 		cp = endp + 1;
 	}
 
@@ -464,24 +529,57 @@ int get_addr64(__u64 *ap, const char *cp)
 	return 1;
 }
 
-int get_addr_1(inet_prefix *addr, const char *name, int family)
+static void set_address_type(inet_prefix *addr)
+{
+	switch (addr->family) {
+	case AF_INET:
+		if (!addr->data[0])
+			addr->flags |= ADDRTYPE_INET_UNSPEC;
+		else if (IN_MULTICAST(ntohl(addr->data[0])))
+			addr->flags |= ADDRTYPE_INET_MULTI;
+		else
+			addr->flags |= ADDRTYPE_INET;
+		break;
+	case AF_INET6:
+		if (IN6_IS_ADDR_UNSPECIFIED(addr->data))
+			addr->flags |= ADDRTYPE_INET_UNSPEC;
+		else if (IN6_IS_ADDR_MULTICAST(addr->data))
+			addr->flags |= ADDRTYPE_INET_MULTI;
+		else
+			addr->flags |= ADDRTYPE_INET;
+		break;
+	}
+}
+
+static int __get_addr_1(inet_prefix *addr, const char *name, int family)
 {
 	memset(addr, 0, sizeof(*addr));
 
-	if (strcmp(name, "default") == 0 ||
-	    strcmp(name, "all") == 0 ||
+	if (strcmp(name, "default") == 0) {
+		if ((family == AF_DECnet) || (family == AF_MPLS))
+			return -1;
+		addr->family = family;
+		addr->bytelen = af_byte_len(addr->family);
+		addr->bitlen = -2;
+		addr->flags |= PREFIXLEN_SPECIFIED;
+		return 0;
+	}
+
+	if (strcmp(name, "all") == 0 ||
 	    strcmp(name, "any") == 0) {
 		if ((family == AF_DECnet) || (family == AF_MPLS))
 			return -1;
 		addr->family = family;
-		addr->bytelen = (family == AF_INET6 ? 16 : 4);
-		addr->bitlen = -1;
+		addr->bytelen = 0;
+		addr->bitlen = -2;
 		return 0;
 	}
 
 	if (family == AF_PACKET) {
 		int len;
-		len = ll_addr_a2n((char *)&addr->data, sizeof(addr->data), name);
+
+		len = ll_addr_a2n((char *) &addr->data, sizeof(addr->data),
+				  name);
 		if (len < 0)
 			return -1;
 
@@ -504,6 +602,7 @@ int get_addr_1(inet_prefix *addr, const char *name, int family)
 
 	if (family == AF_DECnet) {
 		struct dn_naddr dna;
+
 		addr->family = AF_DECnet;
 		if (dnet_pton(AF_DECnet, name, &dna) <= 0)
 			return -1;
@@ -514,14 +613,18 @@ int get_addr_1(inet_prefix *addr, const char *name, int family)
 	}
 
 	if (family == AF_MPLS) {
+		unsigned int maxlabels;
 		int i;
+
 		addr->family = AF_MPLS;
-		if (mpls_pton(AF_MPLS, name, addr->data) <= 0)
+		if (mpls_pton(AF_MPLS, name, addr->data,
+			      sizeof(addr->data)) <= 0)
 			return -1;
 		addr->bytelen = 4;
 		addr->bitlen = 20;
 		/* How many bytes do I need? */
-		for (i = 0; i < 8; i++) {
+		maxlabels = sizeof(addr->data) / sizeof(struct mpls_label);
+		for (i = 0; i < maxlabels; i++) {
 			if (ntohl(addr->data[i]) & MPLS_LS_S_MASK) {
 				addr->bytelen = (i + 1)*4;
 				break;
@@ -539,6 +642,18 @@ int get_addr_1(inet_prefix *addr, const char *name, int family)
 
 	addr->bytelen = 4;
 	addr->bitlen = -1;
+	return 0;
+}
+
+int get_addr_1(inet_prefix *addr, const char *name, int family)
+{
+	int ret;
+
+	ret = __get_addr_1(addr, name, family);
+	if (ret)
+		return ret;
+
+	set_address_type(addr);
 	return 0;
 }
 
@@ -560,74 +675,125 @@ int af_bit_len(int af)
 	return 0;
 }
 
-int af_byte_len(int af)
+static int af_byte_len(int af)
 {
 	return af_bit_len(af) / 8;
 }
 
 int get_prefix_1(inet_prefix *dst, char *arg, int family)
 {
-	int err;
-	unsigned plen;
 	char *slash;
-
-	memset(dst, 0, sizeof(*dst));
-
-	if (strcmp(arg, "default") == 0 ||
-	    strcmp(arg, "any") == 0 ||
-	    strcmp(arg, "all") == 0) {
-		if ((family == AF_DECnet) || (family == AF_MPLS))
-			return -1;
-		dst->family = family;
-		dst->bytelen = 0;
-		dst->bitlen = 0;
-		return 0;
-	}
+	int err, bitlen, flags;
 
 	slash = strchr(arg, '/');
 	if (slash)
 		*slash = 0;
 
 	err = get_addr_1(dst, arg, family);
-	if (err == 0) {
-		dst->bitlen = af_bit_len(dst->family);
 
-		if (slash) {
-			if (get_netmask(&plen, slash+1, 0)
-			    || plen > dst->bitlen) {
-				err = -1;
-				goto done;
-			}
-			dst->flags |= PREFIXLEN_SPECIFIED;
-			dst->bitlen = plen;
-		}
-	}
-done:
 	if (slash)
 		*slash = '/';
-	return err;
+
+	if (err)
+		return err;
+
+	bitlen = af_bit_len(dst->family);
+
+	flags = 0;
+	if (slash) {
+		unsigned int plen;
+
+		if (dst->bitlen == -2)
+			return -1;
+		if (get_netmask(&plen, slash + 1, 0))
+			return -1;
+		if (plen > bitlen)
+			return -1;
+
+		flags |= PREFIXLEN_SPECIFIED;
+		bitlen = plen;
+	} else {
+		if (dst->bitlen == -2)
+			bitlen = 0;
+	}
+
+	dst->flags |= flags;
+	dst->bitlen = bitlen;
+
+	return 0;
+}
+
+static const char *family_name_verbose(int family)
+{
+	if (family == AF_UNSPEC)
+		return "any valid";
+	return family_name(family);
 }
 
 int get_addr(inet_prefix *dst, const char *arg, int family)
 {
 	if (get_addr_1(dst, arg, family)) {
-		fprintf(stderr, "Error: %s address is expected rather than \"%s\".\n",
-				family_name(dst->family) ,arg);
+		fprintf(stderr,
+			"Error: %s address is expected rather than \"%s\".\n",
+			family_name_verbose(family), arg);
 		exit(1);
 	}
+	return 0;
+}
+
+int get_addr_rta(inet_prefix *dst, const struct rtattr *rta, int family)
+{
+	const int len = RTA_PAYLOAD(rta);
+	const void *data = RTA_DATA(rta);
+
+	switch (len) {
+	case 4:
+		dst->family = AF_INET;
+		dst->bytelen = 4;
+		memcpy(dst->data, data, 4);
+		break;
+	case 16:
+		dst->family = AF_INET6;
+		dst->bytelen = 16;
+		memcpy(dst->data, data, 16);
+		break;
+	case 2:
+		dst->family = AF_DECnet;
+		dst->bytelen = 2;
+		memcpy(dst->data, data, 2);
+		break;
+	case 10:
+		dst->family = AF_IPX;
+		dst->bytelen = 10;
+		memcpy(dst->data, data, 10);
+		break;
+	default:
+		return -1;
+	}
+
+	if (family != AF_UNSPEC && family != dst->family)
+		return -2;
+
+	dst->bitlen = -1;
+	dst->flags = 0;
+
+	set_address_type(dst);
 	return 0;
 }
 
 int get_prefix(inet_prefix *dst, char *arg, int family)
 {
 	if (family == AF_PACKET) {
-		fprintf(stderr, "Error: \"%s\" may be inet prefix, but it is not allowed in this context.\n", arg);
+		fprintf(stderr,
+			"Error: \"%s\" may be inet prefix, but it is not allowed in this context.\n",
+			arg);
 		exit(1);
 	}
 
 	if (get_prefix_1(dst, arg, family)) {
-		fprintf(stderr, "Error: %s prefix is expected rather than \"%s\".\n",
-				family_name(dst->family) ,arg);
+		fprintf(stderr,
+			"Error: %s prefix is expected rather than \"%s\".\n",
+			family_name_verbose(family), arg);
 		exit(1);
 	}
 	return 0;
@@ -636,8 +802,11 @@ int get_prefix(inet_prefix *dst, char *arg, int family)
 __u32 get_addr32(const char *name)
 {
 	inet_prefix addr;
+
 	if (get_addr_1(&addr, name, AF_INET)) {
-		fprintf(stderr, "Error: an IP address is expected rather than \"%s\"\n", name);
+		fprintf(stderr,
+			"Error: an IP address is expected rather than \"%s\"\n",
+			name);
 		exit(1);
 	}
 	return addr.data[0];
@@ -663,19 +832,77 @@ void invarg(const char *msg, const char *arg)
 
 void duparg(const char *key, const char *arg)
 {
-	fprintf(stderr, "Error: duplicate \"%s\": \"%s\" is the second value.\n", key, arg);
+	fprintf(stderr,
+		"Error: duplicate \"%s\": \"%s\" is the second value.\n",
+		key, arg);
 	exit(-1);
 }
 
 void duparg2(const char *key, const char *arg)
 {
-	fprintf(stderr, "Error: either \"%s\" is duplicate, or \"%s\" is a garbage.\n", key, arg);
+	fprintf(stderr,
+		"Error: either \"%s\" is duplicate, or \"%s\" is a garbage.\n",
+		key, arg);
 	exit(-1);
+}
+
+int nodev(const char *dev)
+{
+	fprintf(stderr, "Cannot find device \"%s\"\n", dev);
+	return -1;
+}
+
+int check_ifname(const char *name)
+{
+	/* These checks mimic kernel checks in dev_valid_name */
+	if (*name == '\0')
+		return -1;
+	if (strlen(name) >= IFNAMSIZ)
+		return -1;
+
+	while (*name) {
+		if (*name == '/' || isspace(*name))
+			return -1;
+		++name;
+	}
+	return 0;
+}
+
+/* buf is assumed to be IFNAMSIZ */
+int get_ifname(char *buf, const char *name)
+{
+	int ret;
+
+	ret = check_ifname(name);
+	if (ret == 0)
+		strncpy(buf, name, IFNAMSIZ);
+
+	return ret;
+}
+
+const char *get_ifname_rta(int ifindex, const struct rtattr *rta)
+{
+	const char *name;
+
+	if (rta) {
+		name = rta_getattr_str(rta);
+	} else {
+		fprintf(stderr,
+			"BUG: device with ifindex %d has nil ifname\n",
+			ifindex);
+		name = ll_idx_n2a(ifindex);
+	}
+
+	if (check_ifname(name))
+		return NULL;
+
+	return name;
 }
 
 int matches(const char *cmd, const char *pattern)
 {
 	int len = strlen(cmd);
+
 	if (len > strlen(pattern))
 		return -1;
 	return memcmp(pattern, cmd, len);
@@ -709,6 +936,19 @@ int inet_addr_match(const inet_prefix *a, const inet_prefix *b, int bits)
 	return 0;
 }
 
+int inet_addr_match_rta(const inet_prefix *m, const struct rtattr *rta)
+{
+	inet_prefix dst;
+
+	if (!rta || m->family == AF_UNSPEC || m->bitlen <= 0)
+		return 0;
+
+	if (get_addr_rta(&dst, rta, m->family))
+		return -1;
+
+	return inet_addr_match(&dst, m, m->bitlen);
+}
+
 int __iproute2_hz_internal;
 
 int __get_hz(void)
@@ -720,17 +960,20 @@ int __get_hz(void)
 	if (getenv("HZ"))
 		return atoi(getenv("HZ")) ? : HZ;
 
-	if (getenv("PROC_NET_PSCHED")) {
-		snprintf(name, sizeof(name)-1, "%s", getenv("PROC_NET_PSCHED"));
-	} else if (getenv("PROC_ROOT")) {
-		snprintf(name, sizeof(name)-1, "%s/net/psched", getenv("PROC_ROOT"));
-	} else {
+	if (getenv("PROC_NET_PSCHED"))
+		snprintf(name, sizeof(name)-1,
+			 "%s", getenv("PROC_NET_PSCHED"));
+	else if (getenv("PROC_ROOT"))
+		snprintf(name, sizeof(name)-1,
+			 "%s/net/psched", getenv("PROC_ROOT"));
+	else
 		strcpy(name, "/proc/net/psched");
-	}
+
 	fp = fopen(name, "r");
 
 	if (fp) {
-		unsigned nom, denom;
+		unsigned int nom, denom;
+
 		if (fscanf(fp, "%*08x%*08x%08x%08x", &nom, &denom) == 2)
 			if (nom == 1000000)
 				hz = denom;
@@ -748,7 +991,8 @@ int __get_user_hz(void)
 	return sysconf(_SC_CLK_TCK);
 }
 
-const char *rt_addr_n2a_r(int af, int len, const void *addr, char *buf, int buflen)
+const char *rt_addr_n2a_r(int af, int len,
+			  const void *addr, char *buf, int buflen)
 {
 	switch (af) {
 	case AF_INET:
@@ -760,12 +1004,32 @@ const char *rt_addr_n2a_r(int af, int len, const void *addr, char *buf, int bufl
 		return ipx_ntop(af, addr, buf, buflen);
 	case AF_DECnet:
 	{
-		struct dn_naddr dna = { 2, { 0, 0, }};
+		struct dn_naddr dna = { 2, { 0, 0, } };
+
 		memcpy(dna.a_addr, addr, 2);
 		return dnet_ntop(af, &dna, buf, buflen);
 	}
 	case AF_PACKET:
 		return ll_addr_n2a(addr, len, ARPHRD_VOID, buf, buflen);
+	case AF_BRIDGE:
+	{
+		const union {
+			struct sockaddr sa;
+			struct sockaddr_in sin;
+			struct sockaddr_in6 sin6;
+		} *sa = addr;
+
+		switch (sa->sa.sa_family) {
+		case AF_INET:
+			return inet_ntop(AF_INET, &sa->sin.sin_addr,
+					 buf, buflen);
+		case AF_INET6:
+			return inet_ntop(AF_INET6, &sa->sin6.sin6_addr,
+					 buf, buflen);
+		}
+
+		/* fallthrough */
+	}
 	default:
 		return "???";
 	}
@@ -781,6 +1045,7 @@ const char *rt_addr_n2a(int af, int len, const void *addr)
 int read_family(const char *name)
 {
 	int family = AF_UNSPEC;
+
 	if (strcmp(name, "inet") == 0)
 		family = AF_INET;
 	else if (strcmp(name, "inet6") == 0)
@@ -818,8 +1083,7 @@ const char *family_name(int family)
 }
 
 #ifdef RESOLVE_HOSTNAMES
-struct namerec
-{
+struct namerec {
 	struct namerec *next;
 	const char *name;
 	inet_prefix addr;
@@ -832,12 +1096,12 @@ static const char *resolve_address(const void *addr, int len, int af)
 {
 	struct namerec *n;
 	struct hostent *h_ent;
-	unsigned hash;
+	unsigned int hash;
 	static int notfirst;
 
 
-	if (af == AF_INET6 && ((__u32*)addr)[0] == 0 &&
-	    ((__u32*)addr)[1] == 0 && ((__u32*)addr)[2] == htonl(0xffff)) {
+	if (af == AF_INET6 && ((__u32 *)addr)[0] == 0 &&
+	    ((__u32 *)addr)[1] == 0 && ((__u32 *)addr)[2] == htonl(0xffff)) {
 		af = AF_INET;
 		addr += 12;
 		len = 4;
@@ -851,7 +1115,8 @@ static const char *resolve_address(const void *addr, int len, int af)
 		    memcmp(n->addr.data, addr, len) == 0)
 			return n->name;
 	}
-	if ((n = malloc(sizeof(*n))) == NULL)
+	n = malloc(sizeof(*n));
+	if (n == NULL)
 		return NULL;
 	n->addr.family = af;
 	n->addr.bytelen = len;
@@ -863,7 +1128,8 @@ static const char *resolve_address(const void *addr, int len, int af)
 		sethostent(1);
 	fflush(stdout);
 
-	if ((h_ent = gethostbyaddr(addr, len, af)) != NULL)
+	h_ent = gethostbyaddr(addr, len, af);
+	if (h_ent != NULL)
 		n->name = strdup(h_ent->h_name);
 
 	/* Even if we fail, "negative" entry is remembered. */
@@ -901,7 +1167,7 @@ char *hexstring_n2a(const __u8 *str, int len, char *buf, int blen)
 	char *ptr = buf;
 	int i;
 
-	for (i=0; i<len; i++) {
+	for (i = 0; i < len; i++) {
 		if (blen < 3)
 			break;
 		sprintf(ptr, "%02x", str[i]);
@@ -938,6 +1204,28 @@ __u8 *hexstring_a2n(const char *str, __u8 *buf, int blen, unsigned int *len)
 	return buf;
 }
 
+int hex2mem(const char *buf, uint8_t *mem, int count)
+{
+	int i, j;
+	int c;
+
+	for (i = 0, j = 0; i < count; i++, j += 2) {
+		c = get_hex(buf[j]);
+		if (c < 0)
+			return -1;
+
+		mem[i] = c << 4;
+
+		c = get_hex(buf[j + 1]);
+		if (c < 0)
+			return -1;
+
+		mem[i] |= c;
+	}
+
+	return 0;
+}
+
 int addr64_n2a(__u64 addr, char *buff, size_t len)
 {
 	__u16 *words = (__u16 *)&addr;
@@ -960,6 +1248,20 @@ int addr64_n2a(__u64 addr, char *buff, size_t len)
 	}
 
 	return written;
+}
+
+/* Print buffer and escape bytes that are !isprint or among 'escape' */
+void print_escape_buf(const __u8 *buf, size_t len, const char *escape)
+{
+	size_t i;
+
+	for (i = 0; i < len; ++i) {
+		if (isprint(buf[i]) && buf[i] != '\\' &&
+		    !strchr(escape, buf[i]))
+			printf("%c", buf[i]);
+		else
+			printf("\\%03o", buf[i]);
+	}
 }
 
 int print_timestamp(FILE *fp)
@@ -986,6 +1288,54 @@ int print_timestamp(FILE *fp)
 	return 0;
 }
 
+unsigned int print_name_and_link(const char *fmt,
+				 const char *name, struct rtattr *tb[])
+{
+	const char *link = NULL;
+	unsigned int m_flag = 0;
+	SPRINT_BUF(b1);
+
+	if (tb[IFLA_LINK]) {
+		int iflink = rta_getattr_u32(tb[IFLA_LINK]);
+
+		if (iflink) {
+			if (tb[IFLA_LINK_NETNSID]) {
+				if (is_json_context()) {
+					print_int(PRINT_JSON,
+						  "link_index", NULL, iflink);
+				} else {
+					link = ll_idx_n2a(iflink);
+				}
+			} else {
+				link = ll_index_to_name(iflink);
+
+				if (is_json_context()) {
+					print_string(PRINT_JSON,
+						     "link", NULL, link);
+					link = NULL;
+				}
+
+				m_flag = ll_index_to_flags(iflink);
+				m_flag = !(m_flag & IFF_UP);
+			}
+		} else {
+			if (is_json_context())
+				print_null(PRINT_JSON, "link", NULL, NULL);
+			else
+				link = "NONE";
+		}
+
+		if (link) {
+			snprintf(b1, sizeof(b1), "%s@%s", name, link);
+			name = b1;
+		}
+	}
+
+	print_color_string(PRINT_ANY, COLOR_IFNAME, "ifname", fmt, name);
+
+	return m_flag;
+}
+
 int cmdlineno;
 
 /* Like glibc getline but handle continuation lines and comments */
@@ -994,7 +1344,8 @@ ssize_t getcmdline(char **linep, size_t *lenp, FILE *in)
 	ssize_t cc;
 	char *cp;
 
-	if ((cc = getline(linep, lenp, in)) < 0)
+	cc = getline(linep, lenp, in);
+	if (cc < 0)
 		return cc;	/* eof or error */
 	++cmdlineno;
 
@@ -1007,7 +1358,8 @@ ssize_t getcmdline(char **linep, size_t *lenp, FILE *in)
 		size_t len1 = 0;
 		ssize_t cc1;
 
-		if ((cc1 = getline(&line1, &len1, in)) < 0) {
+		cc1 = getline(&line1, &len1, in);
+		if (cc1 < 0) {
 			fprintf(stderr, "Missing continuation line\n");
 			return cc1;
 		}
@@ -1037,10 +1389,16 @@ ssize_t getcmdline(char **linep, size_t *lenp, FILE *in)
 int makeargs(char *line, char *argv[], int maxargs)
 {
 	static const char ws[] = " \t\r\n";
-	char *cp;
+	char *cp = line;
 	int argc = 0;
 
-	for (cp = line + strspn(line, ws); *cp; cp += strspn(cp, ws)) {
+	while (*cp) {
+		/* skip leading whitespace */
+		cp += strspn(cp, ws);
+
+		if (*cp == '\0')
+			break;
+
 		if (argc >= (maxargs - 1)) {
 			fprintf(stderr, "Too many arguments to command\n");
 			exit(1);
@@ -1057,13 +1415,16 @@ int makeargs(char *line, char *argv[], int maxargs)
 				fprintf(stderr, "Unterminated quoted string\n");
 				exit(1);
 			}
-			*cp++ = 0;
-			continue;
+		} else {
+			argv[argc++] = cp;
+
+			/* find end of word */
+			cp += strcspn(cp, ws);
+			if (*cp == '\0')
+				break;
 		}
 
-		argv[argc++] = cp;
-		/* find end of word */
-		cp += strcspn(cp, ws);
+		/* separate words */
 		*cp++ = 0;
 	}
 	argv[argc] = NULL;
@@ -1071,19 +1432,12 @@ int makeargs(char *line, char *argv[], int maxargs)
 	return argc;
 }
 
-int inet_get_addr(const char *src, __u32 *dst, struct in6_addr *dst6)
-{
-	if (strchr(src, ':'))
-		return inet_pton(AF_INET6, src, dst6);
-	else
-		return inet_pton(AF_INET, src, dst);
-}
-
 void print_nlmsg_timestamp(FILE *fp, const struct nlmsghdr *n)
 {
 	char *tstr;
-	time_t secs = ((__u32*)NLMSG_DATA(n))[0];
-	long usecs = ((__u32*)NLMSG_DATA(n))[1];
+	time_t secs = ((__u32 *)NLMSG_DATA(n))[0];
+	long usecs = ((__u32 *)NLMSG_DATA(n))[1];
+
 	tstr = asctime(localtime(&secs));
 	tstr[strlen(tstr)-1] = 0;
 	fprintf(fp, "Timestamp: %s %lu us\n", tstr, usecs);
@@ -1124,7 +1478,7 @@ char *int_to_str(int val, char *buf)
 
 int get_guid(__u64 *guid, const char *arg)
 {
-	unsigned long int tmp;
+	unsigned long tmp;
 	char *endptr;
 	int i;
 
@@ -1163,5 +1517,235 @@ int get_real_family(int rtm_type, int rtm_family)
 	if (rtm_type != RTN_MULTICAST)
 		return rtm_family;
 
-	return rtm_family == RTNL_FAMILY_IPMR ? AF_INET : AF_INET6;
+	if (rtm_family == RTNL_FAMILY_IPMR)
+		return AF_INET;
+
+	if (rtm_family == RTNL_FAMILY_IP6MR)
+		return AF_INET6;
+
+	return rtm_family;
+}
+
+/* Based on copy_rtnl_link_stats() from kernel at net/core/rtnetlink.c */
+static void copy_rtnl_link_stats64(struct rtnl_link_stats64 *stats64,
+				   const struct rtnl_link_stats *stats)
+{
+	__u64 *a = (__u64 *)stats64;
+	const __u32 *b = (const __u32 *)stats;
+	const __u32 *e = b + sizeof(*stats) / sizeof(*b);
+
+	while (b < e)
+		*a++ = *b++;
+}
+
+#define IPSTATS_MIB_MAX_LEN	(__IPSTATS_MIB_MAX * sizeof(__u64))
+static void get_snmp_counters(struct rtnl_link_stats64 *stats64,
+			      struct rtattr *s)
+{
+	__u64 *mib = (__u64 *)RTA_DATA(s);
+
+	memset(stats64, 0, sizeof(*stats64));
+
+	stats64->rx_packets = mib[IPSTATS_MIB_INPKTS];
+	stats64->rx_bytes = mib[IPSTATS_MIB_INOCTETS];
+	stats64->tx_packets = mib[IPSTATS_MIB_OUTPKTS];
+	stats64->tx_bytes = mib[IPSTATS_MIB_OUTOCTETS];
+	stats64->rx_errors = mib[IPSTATS_MIB_INDISCARDS];
+	stats64->tx_errors = mib[IPSTATS_MIB_OUTDISCARDS];
+	stats64->multicast = mib[IPSTATS_MIB_INMCASTPKTS];
+	stats64->rx_frame_errors = mib[IPSTATS_MIB_CSUMERRORS];
+}
+
+int get_rtnl_link_stats_rta(struct rtnl_link_stats64 *stats64,
+			    struct rtattr *tb[])
+{
+	struct rtnl_link_stats stats;
+	void *s;
+	struct rtattr *rta;
+	int size, len;
+
+	if (tb[IFLA_STATS64]) {
+		rta = tb[IFLA_STATS64];
+		size = sizeof(struct rtnl_link_stats64);
+		s = stats64;
+	} else if (tb[IFLA_STATS]) {
+		rta = tb[IFLA_STATS];
+		size = sizeof(struct rtnl_link_stats);
+		s = &stats;
+	} else if (tb[IFLA_PROTINFO]) {
+		struct rtattr *ptb[IPSTATS_MIB_MAX_LEN + 1];
+
+		parse_rtattr_nested(ptb, IPSTATS_MIB_MAX_LEN,
+				    tb[IFLA_PROTINFO]);
+		if (ptb[IFLA_INET6_STATS])
+			get_snmp_counters(stats64, ptb[IFLA_INET6_STATS]);
+		return sizeof(*stats64);
+	} else {
+		return -1;
+	}
+
+	len = RTA_PAYLOAD(rta);
+	if (len < size)
+		memset(s + len, 0, size - len);
+	else
+		len = size;
+
+	memcpy(s, RTA_DATA(rta), len);
+
+	if (s != stats64)
+		copy_rtnl_link_stats64(stats64, s);
+	return size;
+}
+
+#ifdef NEED_STRLCPY
+size_t strlcpy(char *dst, const char *src, size_t size)
+{
+	size_t srclen = strlen(src);
+
+	if (size) {
+		size_t minlen = min(srclen, size - 1);
+
+		memcpy(dst, src, minlen);
+		dst[minlen] = '\0';
+	}
+	return srclen;
+}
+
+size_t strlcat(char *dst, const char *src, size_t size)
+{
+	size_t dlen = strlen(dst);
+
+	if (dlen >= size)
+		return dlen + strlen(src);
+
+	return dlen + strlcpy(dst + dlen, src, size - dlen);
+}
+#endif
+
+void drop_cap(void)
+{
+#ifdef HAVE_LIBCAP
+	/* don't harmstring root/sudo */
+	if (getuid() != 0 && geteuid() != 0) {
+		cap_t capabilities;
+		cap_value_t net_admin = CAP_NET_ADMIN;
+		cap_flag_t inheritable = CAP_INHERITABLE;
+		cap_flag_value_t is_set;
+
+		capabilities = cap_get_proc();
+		if (!capabilities)
+			exit(EXIT_FAILURE);
+		if (cap_get_flag(capabilities, net_admin, inheritable,
+		    &is_set) != 0)
+			exit(EXIT_FAILURE);
+		/* apps with ambient caps can fork and call ip */
+		if (is_set == CAP_CLEAR) {
+			if (cap_clear(capabilities) != 0)
+				exit(EXIT_FAILURE);
+			if (cap_set_proc(capabilities) != 0)
+				exit(EXIT_FAILURE);
+		}
+		cap_free(capabilities);
+	}
+#endif
+}
+
+int get_time(unsigned int *time, const char *str)
+{
+	double t;
+	char *p;
+
+	t = strtod(str, &p);
+	if (p == str)
+		return -1;
+
+	if (*p) {
+		if (strcasecmp(p, "s") == 0 || strcasecmp(p, "sec") == 0 ||
+		    strcasecmp(p, "secs") == 0)
+			t *= TIME_UNITS_PER_SEC;
+		else if (strcasecmp(p, "ms") == 0 || strcasecmp(p, "msec") == 0 ||
+			 strcasecmp(p, "msecs") == 0)
+			t *= TIME_UNITS_PER_SEC/1000;
+		else if (strcasecmp(p, "us") == 0 || strcasecmp(p, "usec") == 0 ||
+			 strcasecmp(p, "usecs") == 0)
+			t *= TIME_UNITS_PER_SEC/1000000;
+		else
+			return -1;
+	}
+
+	*time = t;
+	return 0;
+}
+
+static void print_time(char *buf, int len, __u32 time)
+{
+	double tmp = time;
+
+	if (tmp >= TIME_UNITS_PER_SEC)
+		snprintf(buf, len, "%.1fs", tmp/TIME_UNITS_PER_SEC);
+	else if (tmp >= TIME_UNITS_PER_SEC/1000)
+		snprintf(buf, len, "%.1fms", tmp/(TIME_UNITS_PER_SEC/1000));
+	else
+		snprintf(buf, len, "%uus", time);
+}
+
+char *sprint_time(__u32 time, char *buf)
+{
+	print_time(buf, SPRINT_BSIZE-1, time);
+	return buf;
+}
+
+/* 64 bit times are represented internally in nanoseconds */
+int get_time64(__s64 *time, const char *str)
+{
+	double nsec;
+	char *p;
+
+	nsec = strtod(str, &p);
+	if (p == str)
+		return -1;
+
+	if (*p) {
+		if (strcasecmp(p, "s") == 0 ||
+		    strcasecmp(p, "sec") == 0 ||
+		    strcasecmp(p, "secs") == 0)
+			nsec *= NSEC_PER_SEC;
+		else if (strcasecmp(p, "ms") == 0 ||
+			 strcasecmp(p, "msec") == 0 ||
+			 strcasecmp(p, "msecs") == 0)
+			nsec *= NSEC_PER_MSEC;
+		else if (strcasecmp(p, "us") == 0 ||
+			 strcasecmp(p, "usec") == 0 ||
+			 strcasecmp(p, "usecs") == 0)
+			nsec *= NSEC_PER_USEC;
+		else if (strcasecmp(p, "ns") == 0 ||
+			 strcasecmp(p, "nsec") == 0 ||
+			 strcasecmp(p, "nsecs") == 0)
+			nsec *= 1;
+		else
+			return -1;
+	}
+
+	*time = nsec;
+	return 0;
+}
+
+static void print_time64(char *buf, int len, __s64 time)
+{
+	double nsec = time;
+
+	if (time >= NSEC_PER_SEC)
+		snprintf(buf, len, "%.3fs", nsec/NSEC_PER_SEC);
+	else if (time >= NSEC_PER_MSEC)
+		snprintf(buf, len, "%.3fms", nsec/NSEC_PER_MSEC);
+	else if (time >= NSEC_PER_USEC)
+		snprintf(buf, len, "%.3fus", nsec/NSEC_PER_USEC);
+	else
+		snprintf(buf, len, "%lldns", time);
+}
+
+char *sprint_time64(__s64 time, char *buf)
+{
+	print_time64(buf, SPRINT_BSIZE-1, time);
+	return buf;
 }

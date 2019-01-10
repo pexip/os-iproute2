@@ -66,7 +66,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
-#include <syslog.h>
 #include <fcntl.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -81,10 +80,10 @@
 #endif
 static void explain(void)
 {
-	fprintf(stderr, "Usage:... simple [sdata STRING] [CONTROL] [index INDEX]\n");
+	fprintf(stderr, "Usage:... simple [sdata STRING] [index INDEX] [CONTROL]\n");
 	fprintf(stderr, "\tSTRING being an arbitrary string\n"
-		"\tCONTROL := reclassify|pipe|drop|continue|ok\n"
-		"\tINDEX := optional index value used\n");
+		"\tINDEX := optional index value used\n"
+		"\tCONTROL := reclassify|pipe|drop|continue|ok\n");
 }
 
 static void usage(void)
@@ -120,9 +119,6 @@ parse_simple(struct action_util *a, int *argc_p, char ***argv_p, int tca_id,
 		}
 	}
 
-	if (argc && !action_a2n(*argv, &sel.action, false))
-		NEXT_ARG_FWD();
-
 	if (argc) {
 		if (matches(*argv, "index") == 0) {
 			NEXT_ARG();
@@ -150,12 +146,11 @@ parse_simple(struct action_util *a, int *argc_p, char ***argv_p, int tca_id,
 
 	sel.action = TC_ACT_PIPE;
 
-	tail = NLMSG_TAIL(n);
-	addattr_l(n, MAX_MSG, tca_id, NULL, 0);
+	tail = addattr_nest(n, MAX_MSG, tca_id);
 	addattr_l(n, MAX_MSG, TCA_DEF_PARMS, &sel, sizeof(sel));
 	if (simpdata)
 		addattr_l(n, MAX_MSG, TCA_DEF_DATA, simpdata, SIMP_MAX_DATA);
-	tail->rta_len = (char *)NLMSG_TAIL(n) - (char *)tail;
+	addattr_nest_end(n, tail);
 
 	*argc_p = argc;
 	*argv_p = argv;
@@ -187,7 +182,7 @@ static int print_simple(struct action_util *au, FILE *f, struct rtattr *arg)
 	simpdata = RTA_DATA(tb[TCA_DEF_DATA]);
 
 	fprintf(f, "Simple <%s>\n", simpdata);
-	fprintf(f, "\t index %d ref %d bind %d", sel->index,
+	fprintf(f, "\t index %u ref %d bind %d", sel->index,
 		sel->refcnt, sel->bindcnt);
 
 	if (show_stats) {

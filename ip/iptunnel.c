@@ -60,7 +60,7 @@ static void set_tunnel_proto(struct ip_tunnel_parm *p, int proto)
 static int parse_args(int argc, char **argv, int cmd, struct ip_tunnel_parm *p)
 {
 	int count = 0;
-	char medium[IFNAMSIZ] = {};
+	const char *medium = NULL;
 	int isatap = 0;
 
 	memset(p, 0, sizeof(*p));
@@ -127,19 +127,13 @@ static int parse_args(int argc, char **argv, int cmd, struct ip_tunnel_parm *p)
 			p->iph.frag_off = htons(IP_DF);
 		} else if (strcmp(*argv, "remote") == 0) {
 			NEXT_ARG();
-			if (strcmp(*argv, "any"))
-				p->iph.daddr = get_addr32(*argv);
-			else
-				p->iph.daddr = htonl(INADDR_ANY);
+			p->iph.daddr = get_addr32(*argv);
 		} else if (strcmp(*argv, "local") == 0) {
 			NEXT_ARG();
-			if (strcmp(*argv, "any"))
-				p->iph.saddr = get_addr32(*argv);
-			else
-				p->iph.saddr = htonl(INADDR_ANY);
+			p->iph.saddr = get_addr32(*argv);
 		} else if (strcmp(*argv, "dev") == 0) {
 			NEXT_ARG();
-			strncpy(medium, *argv, IFNAMSIZ - 1);
+			medium = *argv;
 		} else if (strcmp(*argv, "ttl") == 0 ||
 			   strcmp(*argv, "hoplimit") == 0 ||
 			   strcmp(*argv, "hlim") == 0) {
@@ -178,7 +172,8 @@ static int parse_args(int argc, char **argv, int cmd, struct ip_tunnel_parm *p)
 
 			if (p->name[0])
 				duparg2("name", *argv);
-			strncpy(p->name, *argv, IFNAMSIZ - 1);
+			if (get_ifname(p->name, *argv))
+				invarg("\"name\" not a valid ifname", *argv);
 			if (cmd == SIOCCHGTUNNEL && count == 0) {
 				struct ip_tunnel_parm old_p = {};
 
@@ -216,12 +211,10 @@ static int parse_args(int argc, char **argv, int cmd, struct ip_tunnel_parm *p)
 		}
 	}
 
-	if (medium[0]) {
+	if (medium) {
 		p->link = ll_name_to_index(medium);
-		if (p->link == 0) {
-			fprintf(stderr, "Cannot find device \"%s\"\n", medium);
-			return -1;
-		}
+		if (!p->link)
+			return nodev(medium);
 	}
 
 	if (p->i_key == 0 && IN_MULTICAST(ntohl(p->iph.daddr))) {
@@ -291,8 +284,9 @@ static int do_del(int argc, char **argv)
 	return tnl_del_ioctl(tnl_defname(&p) ? : p.name, p.name, &p);
 }
 
-static void print_tunnel(struct ip_tunnel_parm *p)
+static void print_tunnel(const void *t)
 {
+	const struct ip_tunnel_parm *p = t;
 	struct ip_tunnel_6rd ip6rd = {};
 	char s1[1024];
 	char s2[1024];
@@ -331,7 +325,7 @@ static void print_tunnel(struct ip_tunnel_parm *p)
 	}
 
 	if (p->iph.ttl)
-		printf(" ttl %d", p->iph.ttl);
+		printf(" ttl %u", p->iph.ttl);
 	else
 		printf(" ttl inherit");
 
@@ -378,86 +372,52 @@ static void print_tunnel(struct ip_tunnel_parm *p)
 		printf("%s  Checksum output packets.", _SL_);
 }
 
-static int do_tunnels_list(struct ip_tunnel_parm *p)
+
+static void ip_tunnel_parm_initialize(const struct tnl_print_nlmsg_info *info)
 {
-	char buf[512];
-	int err = -1;
-	FILE *fp = fopen("/proc/net/dev", "r");
+	struct ip_tunnel_parm *p2 = info->p2;
 
-	if (fp == NULL) {
-		perror("fopen");
-		return -1;
-	}
+	memset(p2, 0, sizeof(*p2));
+}
 
-	/* skip header lines */
-	if (!fgets(buf, sizeof(buf), fp) ||
-	    !fgets(buf, sizeof(buf), fp)) {
-		fprintf(stderr, "/proc/net/dev read error\n");
-		goto end;
-	}
+static bool ip_tunnel_parm_match(const struct tnl_print_nlmsg_info *info)
+{
+	const struct ip_tunnel_parm *p1 = info->p1;
+	const struct ip_tunnel_parm *p2 = info->p2;
 
-	while (fgets(buf, sizeof(buf), fp) != NULL) {
-		char name[IFNAMSIZ];
-		int index, type;
-		struct ip_tunnel_parm p1 = {};
-		char *ptr;
-
-		buf[sizeof(buf) - 1] = 0;
-		ptr = strchr(buf, ':');
-		if (ptr == NULL ||
-		    (*ptr++ = 0, sscanf(buf, "%s", name) != 1)) {
-			fprintf(stderr, "Wrong format for /proc/net/dev. Giving up.\n");
-			goto end;
-		}
-		if (p->name[0] && strcmp(p->name, name))
-			continue;
-		index = ll_name_to_index(name);
-		if (index == 0)
-			continue;
-		type = ll_index_to_type(index);
-		if (type == -1) {
-			fprintf(stderr, "Failed to get type of \"%s\"\n", name);
-			continue;
-		}
-		if (type != ARPHRD_TUNNEL && type != ARPHRD_IPGRE && type != ARPHRD_SIT)
-			continue;
-		if (tnl_get_ioctl(name, &p1))
-			continue;
-		if ((p->link && p1.link != p->link) ||
-		    (p->name[0] && strcmp(p1.name, p->name)) ||
-		    (p->iph.daddr && p1.iph.daddr != p->iph.daddr) ||
-		    (p->iph.saddr && p1.iph.saddr != p->iph.saddr) ||
-		    (p->i_key && p1.i_key != p->i_key))
-			continue;
-		print_tunnel(&p1);
-		if (show_stats)
-			tnl_print_stats(ptr);
-		printf("\n");
-	}
-	err = 0;
- end:
-	fclose(fp);
-	return err;
+	return ((!p1->link || p1->link == p2->link) &&
+		(!p1->name[0] || strcmp(p1->name, p2->name) == 0) &&
+		(!p1->iph.daddr || p1->iph.daddr == p2->iph.daddr) &&
+		(!p1->iph.saddr || p1->iph.saddr == p2->iph.saddr) &&
+		(!p1->i_key || p1->i_key == p2->i_key));
 }
 
 static int do_show(int argc, char **argv)
 {
-	struct ip_tunnel_parm p;
+	struct ip_tunnel_parm p, p1;
 	const char *basedev;
 
-	ll_init_map(&rth);
 	if (parse_args(argc, argv, SIOCGETTUNNEL, &p) < 0)
 		return -1;
 
 	basedev = tnl_defname(&p);
-	if (!basedev)
-		return do_tunnels_list(&p);
+	if (!basedev) {
+		struct tnl_print_nlmsg_info info = {
+			.p1    = &p,
+			.p2    = &p1,
+			.init  = ip_tunnel_parm_initialize,
+			.match = ip_tunnel_parm_match,
+			.print = print_tunnel,
+		};
+
+		return do_tunnels_list(&info);
+	}
 
 	if (tnl_get_ioctl(p.name[0] ? p.name : basedev, &p))
 		return -1;
 
 	print_tunnel(&p);
-	printf("\n");
+	fputc('\n', stdout);
 	return 0;
 }
 
@@ -465,9 +425,8 @@ static int do_prl(int argc, char **argv)
 {
 	struct ip_tunnel_prl p = {};
 	int count = 0;
-	int devname = 0;
 	int cmd = 0;
-	char medium[IFNAMSIZ] = {};
+	const char *medium = NULL;
 
 	while (argc > 0) {
 		if (strcmp(*argv, "prl-default") == 0) {
@@ -488,8 +447,9 @@ static int do_prl(int argc, char **argv)
 			count++;
 		} else if (strcmp(*argv, "dev") == 0) {
 			NEXT_ARG();
-			strncpy(medium, *argv, IFNAMSIZ-1);
-			devname++;
+			if (check_ifname(*argv))
+				invarg("\"dev\" not a valid ifname", *argv);
+			medium = *argv;
 		} else {
 			fprintf(stderr,
 				"Invalid PRL parameter \"%s\"\n", *argv);
@@ -502,7 +462,7 @@ static int do_prl(int argc, char **argv)
 		}
 		argc--; argv++;
 	}
-	if (devname == 0) {
+	if (!medium) {
 		fprintf(stderr, "Must specify device\n");
 		exit(-1);
 	}
@@ -513,9 +473,8 @@ static int do_prl(int argc, char **argv)
 static int do_6rd(int argc, char **argv)
 {
 	struct ip_tunnel_6rd ip6rd = {};
-	int devname = 0;
 	int cmd = 0;
-	char medium[IFNAMSIZ] = {};
+	const char *medium = NULL;
 	inet_prefix prefix;
 
 	while (argc > 0) {
@@ -537,8 +496,9 @@ static int do_6rd(int argc, char **argv)
 			cmd = SIOCDEL6RD;
 		} else if (strcmp(*argv, "dev") == 0) {
 			NEXT_ARG();
-			strncpy(medium, *argv, IFNAMSIZ-1);
-			devname++;
+			if (check_ifname(*argv))
+				invarg("\"dev\" not a valid ifname", *argv);
+			medium = *argv;
 		} else {
 			fprintf(stderr,
 				"Invalid 6RD parameter \"%s\"\n", *argv);
@@ -546,7 +506,7 @@ static int do_6rd(int argc, char **argv)
 		}
 		argc--; argv++;
 	}
-	if (devname == 0) {
+	if (!medium) {
 		fprintf(stderr, "Must specify device\n");
 		exit(-1);
 	}

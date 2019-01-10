@@ -13,7 +13,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
-#include <syslog.h>
 #include <fcntl.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -51,8 +50,7 @@ static int route_parse_opt(struct filter_util *qu, char *handle, int argc, char 
 	if (argc == 0)
 		return 0;
 
-	tail = NLMSG_TAIL(n);
-	addattr_l(n, 4096, TCA_OPTIONS, NULL, 0);
+	tail = addattr_nest(n, 4096, TCA_OPTIONS);
 
 	while (argc > 0) {
 		if (matches(*argv, "to") == 0) {
@@ -129,7 +127,7 @@ static int route_parse_opt(struct filter_util *qu, char *handle, int argc, char 
 		}
 		argc--; argv++;
 	}
-	tail->rta_len = (void *) NLMSG_TAIL(n) - (void *) tail;
+	addattr_nest_end(n, tail);
 	if (order) {
 		fh &= ~0x7F00;
 		fh |= (order<<8)&0x7F00;
@@ -164,11 +162,11 @@ static int route_print_opt(struct filter_util *qu, FILE *f, struct rtattr *opt, 
 	if (tb[TCA_ROUTE4_FROM])
 		fprintf(f, "from %s ", rtnl_rtrealm_n2a(rta_getattr_u32(tb[TCA_ROUTE4_FROM]), b1, sizeof(b1)));
 	if (tb[TCA_ROUTE4_IIF])
-		fprintf(f, "fromif %s", ll_index_to_name(*(int *)RTA_DATA(tb[TCA_ROUTE4_IIF])));
+		fprintf(f, "fromif %s", ll_index_to_name(rta_getattr_u32(tb[TCA_ROUTE4_IIF])));
 	if (tb[TCA_ROUTE4_POLICE])
 		tc_print_police(f, tb[TCA_ROUTE4_POLICE]);
 	if (tb[TCA_ROUTE4_ACT])
-		tc_print_action(f, tb[TCA_ROUTE4_ACT]);
+		tc_print_action(f, tb[TCA_ROUTE4_ACT], 0);
 	return 0;
 }
 

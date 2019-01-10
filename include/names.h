@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef DB_NAMES_H_
 #define DB_NAMES_H_ 1
 
@@ -21,6 +22,5 @@ int db_names_load(struct db_names *db, const char *path);
 void db_names_free(struct db_names *db);
 
 char *id_to_name(struct db_names *db, int id, char *name);
-int name_to_id(struct db_names *db, int *id, const char *name);
 
 #endif

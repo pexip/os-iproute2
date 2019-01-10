@@ -16,7 +16,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
-#include <syslog.h>
 #include <fcntl.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -25,6 +24,10 @@
 
 #include "utils.h"
 #include "tc_util.h"
+
+static int act_parse_police(struct action_util *a, int *argc_p,
+			    char ***argv_p, int tca_id, struct nlmsghdr *n);
+static int print_police(struct action_util *a, FILE *f, struct rtattr *tb);
 
 struct action_util police_action_util = {
 	.id = "police",
@@ -41,7 +44,8 @@ static void usage(void)
 	fprintf(stderr, "Where: CONTROL := conform-exceed <EXCEEDACT>[/NOTEXCEEDACT]\n");
 	fprintf(stderr, "                  Define how to handle packets which exceed (<EXCEEDACT>)\n");
 	fprintf(stderr, "                  or conform (<NOTEXCEEDACT>) the configured bandwidth limit.\n");
-	fprintf(stderr, "       EXCEEDACT/NOTEXCEEDACT := { pipe | ok | reclassify | drop | continue }\n");
+	fprintf(stderr, "       EXCEEDACT/NOTEXCEEDACT := { pipe | ok | reclassify | drop | continue |\n");
+	fprintf(stderr, "                                   goto chain <CHAIN_INDEX> }\n");
 	exit(-1);
 }
 
@@ -50,29 +54,8 @@ static void explain1(char *arg)
 	fprintf(stderr, "Illegal \"%s\"\n", arg);
 }
 
-static int get_police_result(int *action, int *result, char *arg)
-{
-	char *p = strchr(arg, '/');
-
-	if (p)
-		*p = 0;
-
-	if (action_a2n(arg, action, true)) {
-		if (p)
-			*p = '/';
-		return -1;
-	}
-
-	if (p) {
-		*p = '/';
-		if (action_a2n(p+1, result, true))
-			return -1;
-	}
-	return 0;
-}
-
-int act_parse_police(struct action_util *a, int *argc_p, char ***argv_p,
-		     int tca_id, struct nlmsghdr *n)
+static int act_parse_police(struct action_util *a, int *argc_p, char ***argv_p,
+			    int tca_id, struct nlmsghdr *n)
 {
 	int argc = *argc_p;
 	char **argv = *argv_p;
@@ -166,23 +149,23 @@ int act_parse_police(struct action_util *a, int *argc_p, char ***argv_p,
 				explain1("peakrate");
 				return -1;
 			}
-		} else if (matches(*argv, "reclassify") == 0) {
-			p.action = TC_POLICE_RECLASSIFY;
-		} else if (matches(*argv, "drop") == 0 ||
-			   matches(*argv, "shot") == 0) {
-			p.action = TC_POLICE_SHOT;
-		} else if (matches(*argv, "continue") == 0) {
-			p.action = TC_POLICE_UNSPEC;
-		} else if (matches(*argv, "pass") == 0) {
-			p.action = TC_POLICE_OK;
-		} else if (matches(*argv, "pipe") == 0) {
-			p.action = TC_POLICE_PIPE;
+		} else if (matches(*argv, "reclassify") == 0 ||
+			   matches(*argv, "drop") == 0 ||
+			   matches(*argv, "shot") == 0 ||
+			   matches(*argv, "continue") == 0 ||
+			   matches(*argv, "pass") == 0 ||
+			   matches(*argv, "ok") == 0 ||
+			   matches(*argv, "pipe") == 0 ||
+			   matches(*argv, "goto") == 0) {
+			if (!parse_action_control(&argc, &argv, &p.action, false))
+				goto action_ctrl_ok;
+			return -1;
 		} else if (strcmp(*argv, "conform-exceed") == 0) {
 			NEXT_ARG();
-			if (get_police_result(&p.action, &presult, *argv)) {
-				fprintf(stderr, "Illegal \"action\"\n");
-				return -1;
-			}
+			if (!parse_action_control_slash(&argc, &argv, &p.action,
+							&presult, true))
+				goto action_ctrl_ok;
+			return -1;
 		} else if (matches(*argv, "overhead") == 0) {
 			NEXT_ARG();
 			if (get_u16(&overhead, *argv, 10)) {
@@ -198,8 +181,9 @@ int act_parse_police(struct action_util *a, int *argc_p, char ***argv_p,
 		} else {
 			break;
 		}
+		NEXT_ARG_FWD();
+action_ctrl_ok:
 		ok++;
-		argc--; argv++;
 	}
 
 	if (!ok)
@@ -252,8 +236,7 @@ int act_parse_police(struct action_util *a, int *argc_p, char ***argv_p,
 		}
 	}
 
-	tail = NLMSG_TAIL(n);
-	addattr_l(n, MAX_MSG, tca_id, NULL, 0);
+	tail = addattr_nest(n, MAX_MSG, tca_id);
 	addattr_l(n, MAX_MSG, TCA_POLICE_TBF, &p, sizeof(p));
 	if (p.rate.rate)
 		addattr_l(n, MAX_MSG, TCA_POLICE_RATE, rtab, 1024);
@@ -264,7 +247,7 @@ int act_parse_police(struct action_util *a, int *argc_p, char ***argv_p,
 	if (presult)
 		addattr32(n, MAX_MSG, TCA_POLICE_RESULT, presult);
 
-	tail->rta_len = (void *) NLMSG_TAIL(n) - (void *) tail;
+	addattr_nest_end(n, tail);
 	res = 0;
 
 	*argc_p = argc;
@@ -277,7 +260,7 @@ int parse_police(int *argc_p, char ***argv_p, int tca_id, struct nlmsghdr *n)
 	return act_parse_police(NULL, argc_p, argv_p, tca_id, n);
 }
 
-int print_police(struct action_util *a, FILE *f, struct rtattr *arg)
+static int print_police(struct action_util *a, FILE *f, struct rtattr *arg)
 {
 	SPRINT_BUF(b1);
 	SPRINT_BUF(b2);
@@ -318,12 +301,13 @@ int print_police(struct action_util *a, FILE *f, struct rtattr *arg)
 		fprintf(f, "avrate %s ",
 			sprint_rate(rta_getattr_u32(tb[TCA_POLICE_AVRATE]),
 				    b1));
-	fprintf(f, "action %s", action_n2a(p->action));
+
+	print_action_control(f, "action ", p->action, "");
 
 	if (tb[TCA_POLICE_RESULT]) {
 		__u32 action = rta_getattr_u32(tb[TCA_POLICE_RESULT]);
 
-		fprintf(f, "/%s ", action_n2a(action));
+		print_action_control(f, "/", action, " ");
 	} else
 		fprintf(f, " ");
 

@@ -7,31 +7,49 @@ devlink \- Devlink tool
 .in +8
 .ti -8
 .B devlink
-.RI "[ " OPTIONS " ] " OBJECT " { " COMMAND " | "
+.RI "[ " OPTIONS " ] { " dev | port | monitor | sb | resource | region " } { " COMMAND " | "
 .BR help " }"
 .sp
 
 .ti -8
-.IR OBJECT " := { "
-.BR dev " | " port " | " monitor " }"
+.B devlink
+.RB "[ " -force " ] "
+.BI "-batch " filename
 .sp
-
-.ti -8
-.IR OPTIONS " := { "
-\fB\-V\fR[\fIersion\fR] |
-\fB\-n\fR[\fIno-nice-names\fR] }
 
 .SH OPTIONS
 
 .TP
-.BR "\-V" , " -Version"
+.BR "\-V" , " --Version"
 Print the version of the
 .B devlink
 utility and exit.
 
 .TP
-.BR "\-n" , " -no-nice-names"
+.BR "\-b", " \-batch " <FILENAME>
+Read commands from provided file or standard input and invoke them.
+First failure will cause termination of devlink.
+
+.TP
+.BR "\-force"
+Don't terminate devlink on errors in batch mode.
+If there were any errors during execution of the commands, the application return code will be non zero.
+
+.TP
+.BR "\-n" , " --no-nice-names"
 Turn off printing out nice names, for example netdevice ifnames instead of devlink port identification.
+
+.TP
+.BR "\-j" , " --json"
+Generate JSON output.
+
+.TP
+.BR "\-p" , " --pretty"
+When combined with -j generate a pretty JSON output.
+
+.TP
+.BR "\-v" , " --verbose"
+Turn on verbose output.
 
 .SS
 .I OBJECT
@@ -47,6 +65,18 @@ Turn off printing out nice names, for example netdevice ifnames instead of devli
 .TP
 .B monitor
 - watch for netlink messages.
+
+.TP
+.B sb
+- devlink shared buffer configuration.
+
+.TP
+.B resource
+- devlink device resource configuration.
+
+.TP
+.B region
+- devlink address region access
 
 .SS
 .I COMMAND
@@ -77,6 +107,8 @@ Exit status is 0 if command was successful or a positive integer upon failure.
 .BR devlink-port (8),
 .BR devlink-monitor (8),
 .BR devlink-sb (8),
+.BR devlink-resource (8),
+.BR devlink-region (8),
 .br
 
 .SH REPORTING BUGS

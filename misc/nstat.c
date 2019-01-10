@@ -37,7 +37,6 @@ int reset_history;
 int ignore_history;
 int no_output;
 int json_output;
-int pretty;
 int no_update;
 int scan_interval;
 int time_constant;
@@ -178,12 +177,14 @@ static int count_spaces(const char *line)
 
 static void load_ugly_table(FILE *fp)
 {
-	char buf[4096];
+	char *buf = NULL;
+	size_t buflen = 0;
+	ssize_t nread;
 	struct nstat_ent *db = NULL;
 	struct nstat_ent *n;
 
-	while (fgets(buf, sizeof(buf), fp) != NULL) {
-		char idbuf[sizeof(buf)];
+	while ((nread = getline(&buf, &buflen, fp)) != -1) {
+		char idbuf[4096];
 		int  off;
 		char *p;
 		int count1, count2, skip = 0;
@@ -219,7 +220,8 @@ static void load_ugly_table(FILE *fp)
 			p = next;
 		}
 		n = db;
-		if (fgets(buf, sizeof(buf), fp) == NULL)
+		nread = getline(&buf, &buflen, fp);
+		if (nread == -1)
 			abort();
 		count2 = count_spaces(buf);
 		if (count2 > count1)
@@ -238,6 +240,7 @@ static void load_ugly_table(FILE *fp)
 				n = n->next;
 		} while (p > buf + off + 2);
 	}
+	free(buf);
 
 	while (db) {
 		n = db;
@@ -706,12 +709,18 @@ int main(int argc, char *argv[])
 	    && verify_forging(fd) == 0) {
 		FILE *sfp = fdopen(fd, "r");
 
-		load_good_table(sfp);
-		if (hist_db && source_mismatch) {
-			fprintf(stderr, "nstat: history is stale, ignoring it.\n");
-			hist_db = NULL;
+		if (!sfp) {
+			fprintf(stderr, "nstat: fdopen failed: %s\n",
+				strerror(errno));
+			close(fd);
+		} else {
+			load_good_table(sfp);
+			if (hist_db && source_mismatch) {
+				fprintf(stderr, "nstat: history is stale, ignoring it.\n");
+				hist_db = NULL;
+			}
+			fclose(sfp);
 		}
-		fclose(sfp);
 	} else {
 		if (fd >= 0)
 			close(fd);

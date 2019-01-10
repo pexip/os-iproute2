@@ -13,7 +13,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
-#include <syslog.h>
 #include <fcntl.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -68,8 +67,7 @@ static int fw_parse_opt(struct filter_util *qu, char *handle, int argc, char **a
 	if (argc == 0)
 		return 0;
 
-	tail = NLMSG_TAIL(n);
-	addattr_l(n, 4096, TCA_OPTIONS, NULL, 0);
+	tail = addattr_nest(n, 4096, TCA_OPTIONS);
 
 	if (mask_set)
 		addattr32(n, MAX_MSG, TCA_FW_MASK, mask);
@@ -120,7 +118,7 @@ static int fw_parse_opt(struct filter_util *qu, char *handle, int argc, char **a
 		}
 		argc--; argv++;
 	}
-	tail->rta_len = (void *) NLMSG_TAIL(n) - (void *) tail;
+	addattr_nest_end(n, tail);
 	return 0;
 }
 
@@ -160,7 +158,7 @@ static int fw_print_opt(struct filter_util *qu, FILE *f, struct rtattr *opt, __u
 
 	if (tb[TCA_FW_ACT]) {
 		fprintf(f, "\n");
-		tc_print_action(f, tb[TCA_FW_ACT]);
+		tc_print_action(f, tb[TCA_FW_ACT], 0);
 	}
 	return 0;
 }
