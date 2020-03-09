@@ -12,8 +12,8 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdint.h>
 #include <unistd.h>
-#include <syslog.h>
 #include <fcntl.h>
 #include <math.h>
 #include <sys/socket.h>
@@ -21,6 +21,7 @@
 #include <arpa/inet.h>
 #include <string.h>
 
+#include "utils.h"
 #include "tc_core.h"
 #include <linux/atm.h>
 

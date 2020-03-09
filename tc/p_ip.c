@@ -1,5 +1,5 @@
 /*
- * m_pedit.c		packet editor: IPV4/6 header
+ * p_ip.c		packet editor: IPV4 header
  *
  *		This program is free software; you can distribute it and/or
  *		modify it under the terms of the GNU General Public License
@@ -13,7 +13,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
-#include <syslog.h>
 #include <fcntl.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -25,7 +24,7 @@
 
 static int
 parse_ip(int *argc_p, char ***argv_p,
-	 struct tc_pedit_sel *sel, struct tc_pedit_key *tkey)
+	 struct m_pedit_sel *sel, struct m_pedit_key *tkey)
 {
 	int res = -1;
 	int argc = *argc_p;
@@ -33,6 +32,10 @@ parse_ip(int *argc_p, char ***argv_p,
 
 	if (argc < 2)
 		return -1;
+
+	tkey->htype = sel->extended ?
+		TCA_PEDIT_KEY_EX_HDR_TYPE_IP4 :
+		TCA_PEDIT_KEY_EX_HDR_TYPE_NETWORK;
 
 	if (strcmp(*argv, "src") == 0) {
 		NEXT_ARG();
@@ -48,7 +51,7 @@ parse_ip(int *argc_p, char ***argv_p,
 	}
 	/* jamal - look at these and make them either old or new
 	** scheme given diffserv
-	** dont forget the CE bit
+	** don't forget the CE bit
 	*/
 	if (strcmp(*argv, "tos") == 0 || matches(*argv, "dsfield") == 0) {
 		NEXT_ARG();
@@ -60,6 +63,12 @@ parse_ip(int *argc_p, char ***argv_p,
 		NEXT_ARG();
 		tkey->off = 0;
 		res = parse_cmd(&argc, &argv, 1, TU32, 0x0f, sel, tkey);
+		goto done;
+	}
+	if (strcmp(*argv, "ttl") == 0) {
+		NEXT_ARG();
+		tkey->off = 8;
+		res = parse_cmd(&argc, &argv, 1, TU32, RU8, sel, tkey);
 		goto done;
 	}
 	if (strcmp(*argv, "protocol") == 0) {
@@ -107,6 +116,13 @@ parse_ip(int *argc_p, char ***argv_p,
 		res = parse_cmd(&argc, &argv, 1, TU32, 0x20, sel, tkey);
 		goto done;
 	}
+
+	if (sel->extended)
+		return -1; /* fields located outside IP header should be
+			    * addressed using the relevant header type in
+			    * extended pedit kABI
+			    */
+
 	if (strcmp(*argv, "dport") == 0) {
 		NEXT_ARG();
 		tkey->off = 22;
@@ -139,23 +155,7 @@ done:
 	return res;
 }
 
-static int
-parse_ip6(int *argc_p, char ***argv_p,
-	  struct tc_pedit_sel *sel, struct tc_pedit_key *tkey)
-{
-	int res = -1;
-	return res;
-}
-
 struct m_pedit_util p_pedit_ip = {
-	NULL,
-	"ip",
-	parse_ip,
-};
-
-
-struct m_pedit_util p_pedit_ip6 = {
-	NULL,
-	"ip6",
-	parse_ip6,
+	.id = "ip",
+	.parse_peopt = parse_ip,
 };

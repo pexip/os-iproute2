@@ -40,17 +40,6 @@
 #include "ip_common.h"
 
 #define STRBUF_SIZE	(128)
-#define STRBUF_CAT(buf, str) \
-	do { \
-		int rest = sizeof(buf) - 1 - strlen(buf); \
-		if (rest > 0) { \
-			int len = strlen(str); \
-			if (len > rest) \
-				len = rest; \
-			strncat(buf, str, len); \
-			buf[sizeof(buf) - 1] = '\0'; \
-		} \
-	} while (0);
 
 struct xfrm_filter filter;
 
@@ -197,7 +186,7 @@ const char *strxf_algotype(int type)
 	return str;
 }
 
-const char *strxf_mask8(__u8 mask)
+static const char *strxf_mask8(__u8 mask)
 {
 	static char str[16];
 	const int sn = sizeof(mask) * 8 - 1;
@@ -220,7 +209,7 @@ const char *strxf_mask32(__u32 mask)
 	return str;
 }
 
-const char *strxf_share(__u8 share)
+static const char *strxf_share(__u8 share)
 {
 	static char str[32];
 
@@ -281,7 +270,7 @@ const char *strxf_ptype(__u8 ptype)
 	return str;
 }
 
-void xfrm_id_info_print(xfrm_address_t *saddr, struct xfrm_id *id,
+static void xfrm_id_info_print(xfrm_address_t *saddr, struct xfrm_id *id,
 			__u8 mode, __u32 reqid, __u16 family, int force_spi,
 			FILE *fp, const char *prefix, const char *title)
 {
@@ -348,7 +337,8 @@ static const char *strxf_limit(__u64 limit)
 	return str;
 }
 
-void xfrm_stats_print(struct xfrm_stats *s, FILE *fp, const char *prefix)
+static void xfrm_stats_print(struct xfrm_stats *s, FILE *fp,
+			     const char *prefix)
 {
 	if (prefix)
 		fputs(prefix, fp);
@@ -382,7 +372,7 @@ static const char *strxf_time(__u64 time)
 	return str;
 }
 
-void xfrm_lifetime_print(struct xfrm_lifetime_cfg *cfg,
+static void xfrm_lifetime_print(struct xfrm_lifetime_cfg *cfg,
 			 struct xfrm_lifetime_cur *cur,
 			 FILE *fp, const char *prefix)
 {
@@ -648,6 +638,13 @@ static void xfrm_tmpl_print(struct xfrm_user_tmpl *tmpls, int len,
 	}
 }
 
+static void xfrm_output_mark_print(struct rtattr *tb[], FILE *fp)
+{
+	__u32 output_mark = rta_getattr_u32(tb[XFRMA_OUTPUT_MARK]);
+
+	fprintf(fp, "output-mark 0x%x", output_mark);
+}
+
 int xfrm_parse_mark(struct xfrm_mark *mark, int *argcp, char ***argvp)
 {
 	int argc = *argcp;
@@ -686,44 +683,52 @@ void xfrm_xfrma_print(struct rtattr *tb[], __u16 family,
 {
 	if (tb[XFRMA_MARK]) {
 		struct rtattr *rta = tb[XFRMA_MARK];
-		struct xfrm_mark *m = (struct xfrm_mark *) RTA_DATA(rta);
+		struct xfrm_mark *m = RTA_DATA(rta);
 
-		fprintf(fp, "\tmark %#x/%#x", m->v, m->m);
+		fprintf(fp, "\tmark %#x/%#x ", m->v, m->m);
+
+		if (tb[XFRMA_OUTPUT_MARK])
+			xfrm_output_mark_print(tb, fp);
+		fprintf(fp, "%s", _SL_);
+	} else if (tb[XFRMA_OUTPUT_MARK]) {
+		fprintf(fp, "\t");
+
+		xfrm_output_mark_print(tb, fp);
 		fprintf(fp, "%s", _SL_);
 	}
 
 	if (tb[XFRMA_ALG_AUTH] && !tb[XFRMA_ALG_AUTH_TRUNC]) {
 		struct rtattr *rta = tb[XFRMA_ALG_AUTH];
 
-		xfrm_algo_print((struct xfrm_algo *) RTA_DATA(rta),
+		xfrm_algo_print(RTA_DATA(rta),
 				XFRMA_ALG_AUTH, RTA_PAYLOAD(rta), fp, prefix);
 	}
 
 	if (tb[XFRMA_ALG_AUTH_TRUNC]) {
 		struct rtattr *rta = tb[XFRMA_ALG_AUTH_TRUNC];
 
-		xfrm_auth_trunc_print((struct xfrm_algo_auth *) RTA_DATA(rta),
+		xfrm_auth_trunc_print(RTA_DATA(rta),
 				      RTA_PAYLOAD(rta), fp, prefix);
 	}
 
 	if (tb[XFRMA_ALG_AEAD]) {
 		struct rtattr *rta = tb[XFRMA_ALG_AEAD];
 
-		xfrm_aead_print((struct xfrm_algo_aead *)RTA_DATA(rta),
+		xfrm_aead_print(RTA_DATA(rta),
 				RTA_PAYLOAD(rta), fp, prefix);
 	}
 
 	if (tb[XFRMA_ALG_CRYPT]) {
 		struct rtattr *rta = tb[XFRMA_ALG_CRYPT];
 
-		xfrm_algo_print((struct xfrm_algo *) RTA_DATA(rta),
+		xfrm_algo_print(RTA_DATA(rta),
 				XFRMA_ALG_CRYPT, RTA_PAYLOAD(rta), fp, prefix);
 	}
 
 	if (tb[XFRMA_ALG_COMP]) {
 		struct rtattr *rta = tb[XFRMA_ALG_COMP];
 
-		xfrm_algo_print((struct xfrm_algo *) RTA_DATA(rta),
+		xfrm_algo_print(RTA_DATA(rta),
 				XFRMA_ALG_COMP, RTA_PAYLOAD(rta), fp, prefix);
 	}
 
@@ -739,7 +744,7 @@ void xfrm_xfrma_print(struct rtattr *tb[], __u16 family,
 			fprintf(fp, "%s", _SL_);
 			return;
 		}
-		e = (struct xfrm_encap_tmpl *) RTA_DATA(tb[XFRMA_ENCAP]);
+		e = RTA_DATA(tb[XFRMA_ENCAP]);
 
 		fprintf(fp, "type ");
 		switch (e->encap_type) {
@@ -764,19 +769,18 @@ void xfrm_xfrma_print(struct rtattr *tb[], __u16 family,
 	if (tb[XFRMA_TMPL]) {
 		struct rtattr *rta = tb[XFRMA_TMPL];
 
-		xfrm_tmpl_print((struct xfrm_user_tmpl *) RTA_DATA(rta),
+		xfrm_tmpl_print(RTA_DATA(rta),
 				RTA_PAYLOAD(rta), fp, prefix);
 	}
 
 	if (tb[XFRMA_COADDR]) {
-		xfrm_address_t *coa;
+		const xfrm_address_t *coa;
 
 		if (prefix)
 			fputs(prefix, fp);
 		fprintf(fp, "coa ");
 
-		coa = (xfrm_address_t *)RTA_DATA(tb[XFRMA_COADDR]);
-
+		coa = RTA_DATA(tb[XFRMA_COADDR]);
 		if (RTA_PAYLOAD(tb[XFRMA_COADDR]) < sizeof(*coa)) {
 			fprintf(fp, "(ERROR truncated)");
 			fprintf(fp, "%s", _SL_);
@@ -820,7 +824,7 @@ void xfrm_xfrma_print(struct rtattr *tb[], __u16 family,
 			return;
 		}
 
-		replay = (struct xfrm_replay_state *)RTA_DATA(tb[XFRMA_REPLAY_VAL]);
+		replay = RTA_DATA(tb[XFRMA_REPLAY_VAL]);
 		fprintf(fp, "seq 0x%x, oseq 0x%x, bitmap 0x%08x",
 			replay->seq, replay->oseq, replay->bitmap);
 		fprintf(fp, "%s", _SL_);
@@ -841,7 +845,7 @@ void xfrm_xfrma_print(struct rtattr *tb[], __u16 family,
 		}
 		fprintf(fp, "%s", _SL_);
 
-		replay = (struct xfrm_replay_state_esn *)RTA_DATA(tb[XFRMA_REPLAY_ESN_VAL]);
+		replay = RTA_DATA(tb[XFRMA_REPLAY_ESN_VAL]);
 		if (prefix)
 			fputs(prefix, fp);
 		fprintf(fp, " seq-hi 0x%x, seq 0x%x, oseq-hi 0x%0x, oseq 0x%0x",
@@ -861,6 +865,25 @@ void xfrm_xfrma_print(struct rtattr *tb[], __u16 family,
 			}
 			fprintf(fp, "%08x ", replay->bmp[i - 1]);
 		}
+		fprintf(fp, "%s", _SL_);
+	}
+	if (tb[XFRMA_OFFLOAD_DEV]) {
+		struct xfrm_user_offload *xuo;
+
+		if (prefix)
+			fputs(prefix, fp);
+		fprintf(fp, "crypto offload parameters: ");
+
+		if (RTA_PAYLOAD(tb[XFRMA_OFFLOAD_DEV]) < sizeof(*xuo)) {
+			fprintf(fp, "(ERROR truncated)");
+			fprintf(fp, "%s", _SL_);
+			return;
+		}
+
+		xuo = (struct xfrm_user_offload *)
+			RTA_DATA(tb[XFRMA_OFFLOAD_DEV]);
+		fprintf(fp, "dev %s dir %s", ll_index_to_name(xuo->ifindex),
+			(xuo->flags & XFRM_OFFLOAD_INBOUND) ? "in" : "out");
 		fprintf(fp, "%s", _SL_);
 	}
 }
@@ -884,8 +907,8 @@ void xfrm_state_info_print(struct xfrm_usersa_info *xsinfo,
 			   prefix, title);
 
 	if (prefix)
-		STRBUF_CAT(buf, prefix);
-	STRBUF_CAT(buf, "\t");
+		strlcat(buf, prefix, sizeof(buf));
+	strlcat(buf, "\t", sizeof(buf));
 
 	fputs(buf, fp);
 	fprintf(fp, "replay-window %u ", xsinfo->replay_window);
@@ -907,7 +930,7 @@ void xfrm_state_info_print(struct xfrm_usersa_info *xsinfo,
 			fprintf(fp, "%x", flags);
 	}
 	if (show_stats > 0 && tb[XFRMA_SA_EXTRA_FLAGS]) {
-		__u32 extra_flags = *(__u32 *)RTA_DATA(tb[XFRMA_SA_EXTRA_FLAGS]);
+		__u32 extra_flags = rta_getattr_u32(tb[XFRMA_SA_EXTRA_FLAGS]);
 
 		fprintf(fp, "extra_flag ");
 		XFRM_FLAG_PRINT(fp, extra_flags,
@@ -926,7 +949,7 @@ void xfrm_state_info_print(struct xfrm_usersa_info *xsinfo,
 		char sbuf[STRBUF_SIZE];
 
 		memcpy(sbuf, buf, sizeof(sbuf));
-		STRBUF_CAT(sbuf, "sel ");
+		strlcat(sbuf, "sel ", sizeof(sbuf));
 
 		xfrm_selector_print(&xsinfo->sel, xsinfo->family, fp, sbuf);
 	}
@@ -944,7 +967,7 @@ void xfrm_state_info_print(struct xfrm_usersa_info *xsinfo,
 		if (RTA_PAYLOAD(tb[XFRMA_SEC_CTX]) < sizeof(*sctx))
 			fprintf(fp, "(ERROR truncated)");
 
-		sctx = (struct xfrm_user_sec_ctx *)RTA_DATA(tb[XFRMA_SEC_CTX]);
+		sctx = RTA_DATA(tb[XFRMA_SEC_CTX]);
 
 		fprintf(fp, "%s %s", (char *)(sctx + 1), _SL_);
 	}
@@ -967,15 +990,15 @@ void xfrm_policy_info_print(struct xfrm_userpolicy_info *xpinfo,
 		if (RTA_PAYLOAD(tb[XFRMA_SEC_CTX]) < sizeof(*sctx))
 			fprintf(fp, "(ERROR truncated)");
 
-		sctx = (struct xfrm_user_sec_ctx *)RTA_DATA(tb[XFRMA_SEC_CTX]);
+		sctx = RTA_DATA(tb[XFRMA_SEC_CTX]);
 
 		fprintf(fp, "%s ", (char *)(sctx + 1));
 		fprintf(fp, "%s", _SL_);
 	}
 
 	if (prefix)
-		STRBUF_CAT(buf, prefix);
-	STRBUF_CAT(buf, "\t");
+		strlcat(buf, prefix, sizeof(buf));
+	strlcat(buf, "\t", sizeof(buf));
 
 	fputs(buf, fp);
 	if (xpinfo->dir >= XFRM_POLICY_MAX) {
@@ -1025,7 +1048,7 @@ void xfrm_policy_info_print(struct xfrm_userpolicy_info *xpinfo,
 		if (RTA_PAYLOAD(tb[XFRMA_POLICY_TYPE]) < sizeof(*upt))
 			fprintf(fp, "(ERROR truncated)");
 
-		upt = (struct xfrm_userpolicy_type *)RTA_DATA(tb[XFRMA_POLICY_TYPE]);
+		upt = RTA_DATA(tb[XFRMA_POLICY_TYPE]);
 		fprintf(fp, "%s ", strxf_ptype(upt->type));
 	}
 

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __BPF_ELF__
 #define __BPF_ELF__
 
@@ -15,6 +16,7 @@
 /* ELF section names, etc */
 #define ELF_SECTION_LICENSE	"license"
 #define ELF_SECTION_MAPS	"maps"
+#define ELF_SECTION_PROG	"prog"
 #define ELF_SECTION_CLASSIFIER	"classifier"
 #define ELF_SECTION_ACTION	"action"
 
@@ -35,6 +37,17 @@ struct bpf_elf_map {
 	__u32 flags;
 	__u32 id;
 	__u32 pinning;
+	__u32 inner_id;
+	__u32 inner_idx;
 };
+
+#define BPF_ANNOTATE_KV_PAIR(name, type_key, type_val)		\
+	struct ____btf_map_##name {				\
+		type_key key;					\
+		type_val value;					\
+	};							\
+	struct ____btf_map_##name				\
+	    __attribute__ ((section(".maps." #name), used))	\
+	    ____btf_map_##name = { }
 
 #endif /* __BPF_ELF__ */

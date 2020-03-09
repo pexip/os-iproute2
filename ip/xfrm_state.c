@@ -60,6 +60,8 @@ static void usage(void)
 	fprintf(stderr, "        [ replay-seq-hi SEQ ] [ replay-oseq-hi SEQ ]\n");
 	fprintf(stderr, "        [ flag FLAG-LIST ] [ sel SELECTOR ] [ LIMIT-LIST ] [ encap ENCAP ]\n");
 	fprintf(stderr, "        [ coa ADDR[/PLEN] ] [ ctx CTX ] [ extra-flag EXTRA-FLAG-LIST ]\n");
+	fprintf(stderr, "        [ offload [dev DEV] dir DIR ]\n");
+	fprintf(stderr, "        [ output-mark OUTPUT-MARK ]\n");
 	fprintf(stderr, "Usage: ip xfrm state allocspi ID [ mode MODE ] [ mark MARK [ mask MASK ] ]\n");
 	fprintf(stderr, "        [ reqid REQID ] [ seq SEQ ] [ min SPI max SPI ]\n");
 	fprintf(stderr, "Usage: ip xfrm state { delete | get } ID [ mark MARK [ mask MASK ] ]\n");
@@ -108,6 +110,7 @@ static void usage(void)
 	fprintf(stderr, "LIMIT := { time-soft | time-hard | time-use-soft | time-use-hard } SECONDS |\n");
 	fprintf(stderr, "         { byte-soft | byte-hard } SIZE | { packet-soft | packet-hard } COUNT\n");
 	fprintf(stderr, "ENCAP := { espinudp | espinudp-nonike } SPORT DPORT OADDR\n");
+	fprintf(stderr, "DIR := in | out\n");
 
 	exit(-1);
 }
@@ -123,7 +126,7 @@ static int xfrm_algo_parse(struct xfrm_algo *alg, enum xfrm_attr_type_t type,
 	fprintf(stderr, "warning: ALGO-NAME/ALGO-KEYMAT values will be sent to the kernel promiscuously! (verifying them isn't implemented yet)\n");
 #endif
 
-	strncpy(alg->alg_name, name, sizeof(alg->alg_name));
+	strlcpy(alg->alg_name, name, sizeof(alg->alg_name));
 
 	if (slen > 2 && strncmp(key, "0x", 2) == 0) {
 		/* split two chars "0x" from the top */
@@ -264,6 +267,24 @@ static int xfrm_state_extra_flag_parse(__u32 *extra_flags, int *argcp, char ***a
 	return 0;
 }
 
+static int xfrm_offload_dir_parse(__u8 *dir, int *argcp, char ***argvp)
+{
+	int argc = *argcp;
+	char **argv = *argvp;
+
+	if (strcmp(*argv, "in") == 0)
+		*dir = XFRM_OFFLOAD_INBOUND;
+	else if (strcmp(*argv, "out") == 0)
+		*dir = 0;
+	else
+		invarg("DIR value is invalid", *argv);
+
+	*argcp = argc;
+	*argvp = argv;
+
+	return 0;
+}
+
 static int xfrm_state_modify(int cmd, unsigned int flags, int argc, char **argv)
 {
 	struct rtnl_handle rth;
@@ -283,6 +304,10 @@ static int xfrm_state_modify(int cmd, unsigned int flags, int argc, char **argv)
 	};
 	struct xfrm_replay_state replay = {};
 	struct xfrm_replay_state_esn replay_esn = {};
+	struct xfrm_user_offload xuo = {};
+	unsigned int ifindex = 0;
+	__u8 dir = 0;
+	bool is_offload = false;
 	__u32 replay_window = 0;
 	__u32 seq = 0, oseq = 0, seq_hi = 0, oseq_hi = 0;
 	char *idp = NULL;
@@ -298,6 +323,7 @@ static int xfrm_state_modify(int cmd, unsigned int flags, int argc, char **argv)
 		struct xfrm_user_sec_ctx sctx;
 		char    str[CTX_BUF_SIZE];
 	} ctx = {};
+	__u32 output_mark = 0;
 
 	while (argc > 0) {
 		if (strcmp(*argv, "mode") == 0) {
@@ -394,6 +420,29 @@ static int xfrm_state_modify(int cmd, unsigned int flags, int argc, char **argv)
 			xfrm_sctx_parse((char *)&ctx.str, context, &ctx.sctx);
 			addattr_l(&req.n, sizeof(req.buf), XFRMA_SEC_CTX,
 				  (void *)&ctx, ctx.sctx.len);
+		} else if (strcmp(*argv, "offload") == 0) {
+			is_offload = true;
+			NEXT_ARG();
+			if (strcmp(*argv, "dev") == 0) {
+				NEXT_ARG();
+				ifindex = ll_name_to_index(*argv);
+				if (!ifindex) {
+					invarg("value after \"offload dev\" is invalid", *argv);
+					is_offload = false;
+				}
+				NEXT_ARG();
+			}
+			if (strcmp(*argv, "dir") == 0) {
+				NEXT_ARG();
+				xfrm_offload_dir_parse(&dir, &argc, &argv);
+			} else {
+				invarg("value after \"offload dir\" is invalid", *argv);
+				is_offload = false;
+			}
+		} else if (strcmp(*argv, "output-mark") == 0) {
+			NEXT_ARG();
+			if (get_u32(&output_mark, *argv, 0))
+				invarg("value after \"output-mark\" is invalid", *argv);
 		} else {
 			/* try to assume ALGO */
 			int type = xfrm_algotype_getbyname(*argv);
@@ -496,7 +545,7 @@ static int xfrm_state_modify(int cmd, unsigned int flags, int argc, char **argv)
 
 				xfrm_algo_parse((void *)&alg, type, name, key,
 						buf, sizeof(alg.buf));
-				len += alg.u.alg.alg_key_len;
+				len += alg.u.alg.alg_key_len / 8;
 
 				addattr_l(&req.n, sizeof(req.buf), type,
 					  (void *)&alg, len);
@@ -531,6 +580,12 @@ static int xfrm_state_modify(int cmd, unsigned int flags, int argc, char **argv)
 		exit(-1);
 	}
 
+	if (is_offload) {
+		xuo.ifindex = ifindex;
+		xuo.flags = dir;
+		addattr_l(&req.n, sizeof(req.buf), XFRMA_OFFLOAD_DEV, &xuo,
+			  sizeof(xuo));
+	}
 	if (req.xsinfo.flags & XFRM_STATE_ESN ||
 	    replay_window > (sizeof(replay.bitmap) * 8)) {
 		replay_esn.seq = seq;
@@ -671,13 +726,16 @@ static int xfrm_state_modify(int cmd, unsigned int flags, int argc, char **argv)
 		}
 	}
 
+	if (output_mark)
+		addattr32(&req.n, sizeof(req.buf), XFRMA_OUTPUT_MARK, output_mark);
+
 	if (rtnl_open_byproto(&rth, 0, NETLINK_XFRM) < 0)
 		exit(1);
 
 	if (req.xsinfo.family == AF_UNSPEC)
 		req.xsinfo.family = AF_INET;
 
-	if (rtnl_talk(&rth, &req.n, NULL, 0) < 0)
+	if (rtnl_talk(&rth, &req.n, NULL) < 0)
 		exit(2);
 
 	rtnl_close(&rth);
@@ -708,8 +766,7 @@ static int xfrm_state_allocspi(int argc, char **argv)
 	char *minp = NULL;
 	char *maxp = NULL;
 	struct xfrm_mark mark = {0, 0};
-	char res_buf[NLMSG_BUF_SIZE] = {};
-	struct nlmsghdr *res_n = (struct nlmsghdr *)res_buf;
+	struct nlmsghdr *answer;
 
 	while (argc > 0) {
 		if (strcmp(*argv, "mode") == 0) {
@@ -809,14 +866,15 @@ static int xfrm_state_allocspi(int argc, char **argv)
 		req.xspi.info.family = AF_INET;
 
 
-	if (rtnl_talk(&rth, &req.n, res_n, sizeof(res_buf)) < 0)
+	if (rtnl_talk(&rth, &req.n, &answer) < 0)
 		exit(2);
 
-	if (xfrm_state_print(NULL, res_n, (void *)stdout) < 0) {
+	if (xfrm_state_print(answer, (void *)stdout) < 0) {
 		fprintf(stderr, "An error :-)\n");
 		exit(1);
 	}
 
+	free(answer);
 	rtnl_close(&rth);
 
 	return 0;
@@ -850,8 +908,7 @@ static int xfrm_state_filter_match(struct xfrm_usersa_info *xsinfo)
 	return 1;
 }
 
-int xfrm_state_print(const struct sockaddr_nl *who, struct nlmsghdr *n,
-		     void *arg)
+int xfrm_state_print(struct nlmsghdr *n, void *arg)
 {
 	FILE *fp = (FILE *)arg;
 	struct rtattr *tb[XFRMA_MAX+1];
@@ -871,7 +928,7 @@ int xfrm_state_print(const struct sockaddr_nl *who, struct nlmsghdr *n,
 	}
 
 	if (n->nlmsg_type == XFRM_MSG_DELSA) {
-		/* Dont blame me for this .. Herbert made me do it */
+		/* Don't blame me for this .. Herbert made me do it */
 		xsid = NLMSG_DATA(n);
 		len -= NLMSG_SPACE(sizeof(*xsid));
 	} else if (n->nlmsg_type == XFRM_MSG_EXPIRE) {
@@ -997,19 +1054,20 @@ static int xfrm_state_get_or_delete(int argc, char **argv, int delete)
 		req.xsid.family = AF_INET;
 
 	if (delete) {
-		if (rtnl_talk(&rth, &req.n, NULL, 0) < 0)
+		if (rtnl_talk(&rth, &req.n, NULL) < 0)
 			exit(2);
 	} else {
-		char buf[NLMSG_BUF_SIZE] = {};
-		struct nlmsghdr *res_n = (struct nlmsghdr *)buf;
+		struct nlmsghdr *answer;
 
-		if (rtnl_talk(&rth, &req.n, res_n, sizeof(req)) < 0)
+		if (rtnl_talk(&rth, &req.n, &answer) < 0)
 			exit(2);
 
-		if (xfrm_state_print(NULL, res_n, (void *)stdout) < 0) {
+		if (xfrm_state_print(answer, (void *)stdout) < 0) {
 			fprintf(stderr, "An error :-)\n");
 			exit(1);
 		}
+
+		free(answer);
 	}
 
 	rtnl_close(&rth);
@@ -1021,9 +1079,7 @@ static int xfrm_state_get_or_delete(int argc, char **argv, int delete)
  * With an existing state of nlmsg, make new nlmsg for deleting the state
  * and store it to buffer.
  */
-static int xfrm_state_keep(const struct sockaddr_nl *who,
-			   struct nlmsghdr *n,
-			   void *arg)
+static int xfrm_state_keep(struct nlmsghdr *n, void *arg)
 {
 	struct xfrm_buffer *xb = (struct xfrm_buffer *)arg;
 	struct rtnl_handle *rth = xb->rth;
@@ -1031,6 +1087,7 @@ static int xfrm_state_keep(const struct sockaddr_nl *who,
 	int len = n->nlmsg_len;
 	struct nlmsghdr *new_n;
 	struct xfrm_usersa_id *xsid;
+	struct rtattr *tb[XFRMA_MAX+1];
 
 	if (n->nlmsg_type != XFRM_MSG_NEWSA) {
 		fprintf(stderr, "Not a state: %08x %08x %08x\n",
@@ -1066,6 +1123,17 @@ static int xfrm_state_keep(const struct sockaddr_nl *who,
 
 	addattr_l(new_n, xb->size, XFRMA_SRCADDR, &xsinfo->saddr,
 		  sizeof(xsid->daddr));
+
+	parse_rtattr(tb, XFRMA_MAX, XFRMS_RTA(xsinfo), len);
+
+	if (tb[XFRMA_MARK]) {
+		int r = addattr_l(new_n, xb->size, XFRMA_MARK,
+				(void *)RTA_DATA(tb[XFRMA_MARK]), tb[XFRMA_MARK]->rta_len);
+		if (r < 0) {
+			fprintf(stderr, "%s: XFRMA_MARK failed\n", __func__);
+			exit(1);
+		}
+	}
 
 	xb->offset += new_n->nlmsg_len;
 	xb->nlmsg_count++;
@@ -1216,8 +1284,6 @@ static int print_sadinfo(struct nlmsghdr *n, void *arg)
 	__u32 *f = NLMSG_DATA(n);
 	struct rtattr *tb[XFRMA_SAD_MAX+1];
 	struct rtattr *rta;
-	__u32 *cnt;
-
 	int len = n->nlmsg_len;
 
 	len -= NLMSG_LENGTH(sizeof(__u32));
@@ -1230,9 +1296,11 @@ static int print_sadinfo(struct nlmsghdr *n, void *arg)
 	parse_rtattr(tb, XFRMA_SAD_MAX, rta, len);
 
 	if (tb[XFRMA_SAD_CNT]) {
+		__u32 cnt;
+
 		fprintf(fp, "\t SAD");
-		cnt = (__u32 *)RTA_DATA(tb[XFRMA_SAD_CNT]);
-		fprintf(fp, " count %d", *cnt);
+		cnt = rta_getattr_u32(tb[XFRMA_SAD_CNT]);
+		fprintf(fp, " count %u", cnt);
 	} else {
 		fprintf(fp, "BAD SAD info returned\n");
 		return -1;
@@ -1265,22 +1333,23 @@ static int xfrm_sad_getinfo(int argc, char **argv)
 	struct {
 		struct nlmsghdr			n;
 		__u32				flags;
-		char				ans[64];
 	} req = {
 		.n.nlmsg_len = NLMSG_LENGTH(sizeof(req.flags)),
 		.n.nlmsg_flags = NLM_F_REQUEST,
 		.n.nlmsg_type = XFRM_MSG_GETSADINFO,
 		.flags = 0XFFFFFFFF,
 	};
+	struct nlmsghdr *answer;
 
 	if (rtnl_open_byproto(&rth, 0, NETLINK_XFRM) < 0)
 		exit(1);
 
-	if (rtnl_talk(&rth, &req.n, &req.n, sizeof(req)) < 0)
+	if (rtnl_talk(&rth, &req.n, &answer) < 0)
 		exit(2);
 
-	print_sadinfo(&req.n, (void *)stdout);
+	print_sadinfo(answer, (void *)stdout);
 
+	free(answer);
 	rtnl_close(&rth);
 
 	return 0;
@@ -1327,7 +1396,7 @@ static int xfrm_state_flush(int argc, char **argv)
 		fprintf(stderr, "Flush state with XFRM-PROTO value \"%s\"\n",
 			strxf_xfrmproto(req.xsf.proto));
 
-	if (rtnl_talk(&rth, &req.n, NULL, 0) < 0)
+	if (rtnl_talk(&rth, &req.n, NULL) < 0)
 		exit(2);
 
 	rtnl_close(&rth);

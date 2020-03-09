@@ -1,14 +1,11 @@
+# SPDX-License-Identifier: GPL-2.0
 BROBJ = bridge.o fdb.o monitor.o link.o mdb.o vlan.o
 
-include ../Config
-
-ifeq ($(IP_CONFIG_SETNS),y)
-	CFLAGS += -DHAVE_SETNS
-endif
+include ../config.mk
 
 all: bridge
 
-bridge: $(BROBJ) $(LIBNETLINK) 
+bridge: $(BROBJ) $(LIBNETLINK)
 	$(QUIET_LINK)$(CC) $^ $(LDFLAGS) $(LDLIBS) -o $@
 
 install: all
@@ -16,4 +13,3 @@ install: all
 
 clean:
 	rm -f $(BROBJ) bridge
-

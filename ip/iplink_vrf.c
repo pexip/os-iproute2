@@ -13,6 +13,7 @@
 #include <string.h>
 #include <sys/socket.h>
 #include <linux/if_link.h>
+#include <errno.h>
 
 #include "rt_names.h"
 #include "utils.h"
@@ -61,7 +62,10 @@ static void vrf_print_opt(struct link_util *lu, FILE *f, struct rtattr *tb[])
 		return;
 
 	if (tb[IFLA_VRF_TABLE])
-		fprintf(f, "table %u ", rta_getattr_u32(tb[IFLA_VRF_TABLE]));
+		print_uint(PRINT_ANY,
+			   "table",
+			   "table %u ",
+			   rta_getattr_u32(tb[IFLA_VRF_TABLE]));
 }
 
 static void vrf_slave_print_opt(struct link_util *lu, FILE *f,
@@ -71,13 +75,15 @@ static void vrf_slave_print_opt(struct link_util *lu, FILE *f,
 		return;
 
 	if (tb[IFLA_VRF_PORT_TABLE]) {
-		fprintf(f, "table %u ",
-			rta_getattr_u32(tb[IFLA_VRF_PORT_TABLE]));
+		print_uint(PRINT_ANY,
+			   "table",
+			   "table %u ",
+			   rta_getattr_u32(tb[IFLA_VRF_PORT_TABLE]));
 	}
 }
 
 static void vrf_print_help(struct link_util *lu, int argc, char **argv,
-			      FILE *f)
+			   FILE *f)
 {
 	vrf_explain(f);
 }
@@ -113,10 +119,7 @@ __u32 ipvrf_get_table(const char *name)
 			.ifi_family  = preferred_family,
 		},
 	};
-	struct {
-		struct nlmsghdr n;
-		char buf[8192];
-	} answer;
+	struct nlmsghdr *answer;
 	struct rtattr *tb[IFLA_MAX+1];
 	struct rtattr *li[IFLA_INFO_MAX+1];
 	struct rtattr *vrf_attr[IFLA_VRF_MAX + 1];
@@ -126,28 +129,35 @@ __u32 ipvrf_get_table(const char *name)
 
 	addattr_l(&req.n, sizeof(req), IFLA_IFNAME, name, strlen(name) + 1);
 
-	if (rtnl_talk(&rth, &req.n, &answer.n, sizeof(answer)) < 0)
-		return 0;
+	if (rtnl_talk_suppress_rtnl_errmsg(&rth, &req.n, &answer) < 0) {
+		/* special case "default" vrf to be the main table */
+		if (errno == ENODEV && !strcmp(name, "default"))
+			if (rtnl_rttable_a2n(&tb_id, "main"))
+				fprintf(stderr,
+					"BUG: RTTable \"main\" not found.\n");
 
-	ifi = NLMSG_DATA(&answer.n);
-	len = answer.n.nlmsg_len - NLMSG_LENGTH(sizeof(*ifi));
+		return tb_id;
+	}
+
+	ifi = NLMSG_DATA(answer);
+	len = answer->nlmsg_len - NLMSG_LENGTH(sizeof(*ifi));
 	if (len < 0) {
 		fprintf(stderr, "BUG: Invalid response to link query.\n");
-		return 0;
+		goto out;
 	}
 
 	parse_rtattr(tb, IFLA_MAX, IFLA_RTA(ifi), len);
 
 	if (!tb[IFLA_LINKINFO])
-		return 0;
+		goto out;
 
 	parse_rtattr_nested(li, IFLA_INFO_MAX, tb[IFLA_LINKINFO]);
 
 	if (!li[IFLA_INFO_KIND] || !li[IFLA_INFO_DATA])
-		return 0;
+		goto out;
 
 	if (strcmp(RTA_DATA(li[IFLA_INFO_KIND]), "vrf"))
-		return 0;
+		goto out;
 
 	parse_rtattr_nested(vrf_attr, IFLA_VRF_MAX, li[IFLA_INFO_DATA]);
 	if (vrf_attr[IFLA_VRF_TABLE])
@@ -156,10 +166,12 @@ __u32 ipvrf_get_table(const char *name)
 	if (!tb_id)
 		fprintf(stderr, "BUG: VRF %s is missing table id\n", name);
 
+out:
+	free(answer);
 	return tb_id;
 }
 
-bool name_is_vrf(const char *name)
+int name_is_vrf(const char *name)
 {
 	struct {
 		struct nlmsghdr		n;
@@ -175,36 +187,40 @@ bool name_is_vrf(const char *name)
 			.ifi_family  = preferred_family,
 		},
 	};
-	struct {
-		struct nlmsghdr n;
-		char buf[8192];
-	} answer;
+	struct nlmsghdr *answer;
 	struct rtattr *tb[IFLA_MAX+1];
 	struct rtattr *li[IFLA_INFO_MAX+1];
 	struct ifinfomsg *ifi;
+	int ifindex = 0;
 	int len;
 
 	addattr_l(&req.n, sizeof(req), IFLA_IFNAME, name, strlen(name) + 1);
 
-	if (rtnl_talk(&rth, &req.n, &answer.n, sizeof(answer)) < 0)
-		return false;
+	if (rtnl_talk_suppress_rtnl_errmsg(&rth, &req.n, &answer) < 0)
+		return 0;
 
-	ifi = NLMSG_DATA(&answer.n);
-	len = answer.n.nlmsg_len - NLMSG_LENGTH(sizeof(*ifi));
+	ifi = NLMSG_DATA(answer);
+	len = answer->nlmsg_len - NLMSG_LENGTH(sizeof(*ifi));
 	if (len < 0) {
 		fprintf(stderr, "BUG: Invalid response to link query.\n");
-		return false;
+		goto out;
 	}
 
 	parse_rtattr(tb, IFLA_MAX, IFLA_RTA(ifi), len);
 
 	if (!tb[IFLA_LINKINFO])
-		return false;
+		goto out;
 
 	parse_rtattr_nested(li, IFLA_INFO_MAX, tb[IFLA_LINKINFO]);
 
 	if (!li[IFLA_INFO_KIND])
-		return false;
+		goto out;
 
-	return strcmp(RTA_DATA(li[IFLA_INFO_KIND]), "vrf") == 0;
+	if (strcmp(RTA_DATA(li[IFLA_INFO_KIND]), "vrf"))
+		goto out;
+
+	ifindex = ifi->ifi_index;
+out:
+	free(answer);
+	return ifindex;
 }

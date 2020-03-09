@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __UTILS_H__
 #define __UTILS_H__ 1
 
@@ -6,10 +7,16 @@
 #include <resolv.h>
 #include <stdlib.h>
 #include <stdbool.h>
+#include <time.h>
+
+#ifdef HAVE_LIBBSD
+#include <bsd/string.h>
+#endif
 
 #include "libnetlink.h"
 #include "ll_map.h"
 #include "rtm_map.h"
+#include "json_print.h"
 
 extern int preferred_family;
 extern int human_readable;
@@ -20,25 +27,14 @@ extern int show_raw;
 extern int resolve_hosts;
 extern int oneline;
 extern int brief;
+extern int json;
+extern int pretty;
 extern int timestamp;
 extern int timestamp_short;
 extern const char * _SL_;
 extern int max_flush_loops;
 extern int batch_mode;
 extern bool do_all;
-
-#ifndef IPPROTO_ESP
-#define IPPROTO_ESP	50
-#endif
-#ifndef IPPROTO_AH
-#define IPPROTO_AH	51
-#endif
-#ifndef IPPROTO_COMP
-#define IPPROTO_COMP	108
-#endif
-#ifndef IPSEC_PROTO_ANY
-#define IPSEC_PROTO_ANY	255
-#endif
 
 #ifndef CONFDIR
 #define CONFDIR		"/etc/iproute2"
@@ -54,6 +50,11 @@ void incomplete_command(void) __attribute__((noreturn));
 #define NEXT_ARG_FWD() do { argv++; argc--; } while(0)
 #define PREV_ARG() do { argv--; argc++; } while(0)
 
+#define TIME_UNITS_PER_SEC	1000000
+#define NSEC_PER_USEC 1000
+#define NSEC_PER_MSEC 1000000
+#define NSEC_PER_SEC 1000000000LL
+
 typedef struct
 {
 	__u16 flags;
@@ -61,10 +62,48 @@ typedef struct
 	__s16 bitlen;
 	/* These next two fields match rtvia */
 	__u16 family;
-	__u32 data[8];
+	__u32 data[64];
 } inet_prefix;
 
-#define PREFIXLEN_SPECIFIED 1
+enum {
+	PREFIXLEN_SPECIFIED	= (1 << 0),
+	ADDRTYPE_INET		= (1 << 1),
+	ADDRTYPE_UNSPEC		= (1 << 2),
+	ADDRTYPE_MULTI		= (1 << 3),
+
+	ADDRTYPE_INET_UNSPEC	= ADDRTYPE_INET | ADDRTYPE_UNSPEC,
+	ADDRTYPE_INET_MULTI	= ADDRTYPE_INET | ADDRTYPE_MULTI
+};
+
+static inline void inet_prefix_reset(inet_prefix *p)
+{
+	p->flags = 0;
+}
+
+static inline bool is_addrtype_inet(const inet_prefix *p)
+{
+	return p->flags & ADDRTYPE_INET;
+}
+
+static inline bool is_addrtype_inet_unspec(const inet_prefix *p)
+{
+	return (p->flags & ADDRTYPE_INET_UNSPEC) == ADDRTYPE_INET_UNSPEC;
+}
+
+static inline bool is_addrtype_inet_multi(const inet_prefix *p)
+{
+	return (p->flags & ADDRTYPE_INET_MULTI) == ADDRTYPE_INET_MULTI;
+}
+
+static inline bool is_addrtype_inet_not_unspec(const inet_prefix *p)
+{
+	return (p->flags & ADDRTYPE_INET_UNSPEC) == ADDRTYPE_INET;
+}
+
+static inline bool is_addrtype_inet_not_multi(const inet_prefix *p)
+{
+	return (p->flags & ADDRTYPE_INET_MULTI) == ADDRTYPE_INET;
+}
 
 #define DN_MAXADDL 20
 #ifndef AF_DECnet
@@ -87,9 +126,13 @@ struct ipx_addr {
 #ifndef AF_MPLS
 # define AF_MPLS 28
 #endif
+#ifndef IPPROTO_MPLS
+#define IPPROTO_MPLS	137
+#endif
 
-/* Maximum number of labels the mpls helpers support */
-#define MPLS_MAX_LABELS 8
+#ifndef CLOCK_TAI
+# define CLOCK_TAI 11
+#endif
 
 __u32 get_addr32(const char *name);
 int get_addr_1(inet_prefix *dst, const char *arg, int family);
@@ -97,8 +140,11 @@ int get_prefix_1(inet_prefix *dst, char *arg, int family);
 int get_addr(inet_prefix *dst, const char *arg, int family);
 int get_prefix(inet_prefix *dst, char *arg, int family);
 int mask2bits(__u32 netmask);
+int get_addr_rta(inet_prefix *dst, const struct rtattr *rta, int family);
 int get_addr_ila(__u64 *val, const char *arg);
 
+int read_prop(const char *dev, char *prop, long *value);
+int parse_percent(double *val, const char *str);
 int get_hex(char c);
 int get_integer(int *val, const char *arg, int base);
 int get_unsigned(unsigned *val, const char *arg, int base);
@@ -106,28 +152,31 @@ int get_time_rtt(unsigned *val, const char *arg, int *raw);
 #define get_byte get_u8
 #define get_ushort get_u16
 #define get_short get_s16
+int get_s64(__s64 *val, const char *arg, int base);
 int get_u64(__u64 *val, const char *arg, int base);
 int get_u32(__u32 *val, const char *arg, int base);
 int get_s32(__s32 *val, const char *arg, int base);
 int get_u16(__u16 *val, const char *arg, int base);
-int get_s16(__s16 *val, const char *arg, int base);
 int get_u8(__u8 *val, const char *arg, int base);
-int get_s8(__s8 *val, const char *arg, int base);
 int get_be64(__be64 *val, const char *arg, int base);
 int get_be32(__be32 *val, const char *arg, int base);
 int get_be16(__be16 *val, const char *arg, int base);
 int get_addr64(__u64 *ap, const char *cp);
 
+int hex2mem(const char *buf, uint8_t *mem, int count);
 char *hexstring_n2a(const __u8 *str, int len, char *buf, int blen);
 __u8 *hexstring_a2n(const char *str, __u8 *buf, int blen, unsigned int *len);
 #define ADDR64_BUF_SIZE sizeof("xxxx:xxxx:xxxx:xxxx")
 int addr64_n2a(__u64 addr, char *buff, size_t len);
 
 int af_bit_len(int af);
-int af_byte_len(int af);
 
 const char *format_host_r(int af, int len, const void *addr,
 			       char *buf, int buflen);
+#define format_host_rta_r(af, rta, buf, buflen)	\
+	format_host_r(af, RTA_PAYLOAD(rta), RTA_DATA(rta), \
+		      buf, buflen)
+
 const char *format_host(int af, int lne, const void *addr);
 #define format_host_rta(af, rta) \
 	format_host(af, RTA_PAYLOAD(rta), RTA_DATA(rta))
@@ -144,8 +193,13 @@ void missarg(const char *) __attribute__((noreturn));
 void invarg(const char *, const char *) __attribute__((noreturn));
 void duparg(const char *, const char *) __attribute__((noreturn));
 void duparg2(const char *, const char *) __attribute__((noreturn));
+int nodev(const char *dev);
+int check_ifname(const char *);
+int get_ifname(char *, const char *);
+const char *get_ifname_rta(int ifindex, const struct rtattr *rta);
 int matches(const char *arg, const char *pattern);
 int inet_addr_match(const inet_prefix *a, const inet_prefix *b, int bits);
+int inet_addr_match_rta(const inet_prefix *m, const struct rtattr *rta);
 
 const char *dnet_ntop(int af, const void *addr, char *str, size_t len);
 int dnet_pton(int af, const char *src, void *addr);
@@ -154,7 +208,7 @@ const char *ipx_ntop(int af, const void *addr, char *str, size_t len);
 int ipx_pton(int af, const char *src, void *addr);
 
 const char *mpls_ntop(int af, const void *addr, char *str, size_t len);
-int mpls_pton(int af, const char *src, void *addr);
+int mpls_pton(int af, const char *src, void *addr, size_t alen);
 
 extern int __iproute2_hz_internal;
 int __get_hz(void);
@@ -204,8 +258,15 @@ static inline void __jiffies_to_tv(struct timeval *tv, unsigned long jiffies)
 	tv->tv_usec = tvusec - 1000000 * tv->tv_sec;
 }
 
+void print_escape_buf(const __u8 *buf, size_t len, const char *escape);
+
 int print_timestamp(FILE *fp);
 void print_nlmsg_timestamp(FILE *fp, const struct nlmsghdr *n);
+
+unsigned int print_name_and_link(const char *fmt,
+				 const char *name, struct rtattr *tb[]);
+
+#define BIT(nr)                 (1UL << (nr))
 
 #define ARRAY_SIZE(x) (sizeof(x) / sizeof((x)[0]))
 
@@ -237,12 +298,6 @@ void print_nlmsg_timestamp(FILE *fp, const struct nlmsghdr *n);
 extern int cmdlineno;
 ssize_t getcmdline(char **line, size_t *len, FILE *in);
 int makeargs(char *line, char *argv[], int maxargs);
-int inet_get_addr(const char *src, __u32 *dst, struct in6_addr *dst6);
-
-struct iplink_req;
-int iplink_parse(int argc, char **argv, struct iplink_req *req,
-		char **name, char **type, char **link, char **dev,
-		int *group, int *index);
 
 int do_each_netns(int (*func)(char *nsname, void *arg), void *arg,
 		bool show_label);
@@ -250,5 +305,25 @@ int do_each_netns(int (*func)(char *nsname, void *arg), void *arg,
 char *int_to_str(int val, char *buf);
 int get_guid(__u64 *guid, const char *arg);
 int get_real_family(int rtm_type, int rtm_family);
+
+int cmd_exec(const char *cmd, char **argv, bool do_fork);
+int make_path(const char *path, mode_t mode);
+char *find_cgroup2_mount(void);
+int get_command_name(const char *pid, char *comm, size_t len);
+
+int get_rtnl_link_stats_rta(struct rtnl_link_stats64 *stats64,
+			    struct rtattr *tb[]);
+
+#ifdef NEED_STRLCPY
+size_t strlcpy(char *dst, const char *src, size_t size);
+size_t strlcat(char *dst, const char *src, size_t size);
+#endif
+
+void drop_cap(void);
+
+int get_time(unsigned int *time, const char *str);
+int get_time64(__s64 *time, const char *str);
+char *sprint_time(__u32 time, char *buf);
+char *sprint_time64(__s64 time, char *buf);
 
 #endif /* __UTILS_H__ */

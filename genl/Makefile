@@ -1,6 +1,7 @@
+# SPDX-License-Identifier: GPL-2.0
 GENLOBJ=genl.o
 
-include ../Config
+include ../config.mk
 SHARED_LIBS ?= y
 
 CFLAGS += -fno-strict-aliasing

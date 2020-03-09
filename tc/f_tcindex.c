@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * f_tcindex.c		Traffic control index filter
  *
@@ -7,7 +8,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
-#include <syslog.h>
 #include <fcntl.h>
 #include <string.h>
 #include <netinet/in.h>
@@ -37,8 +37,7 @@ static int tcindex_parse_opt(struct filter_util *qu, char *handle, int argc,
 		}
 	}
 	if (!argc) return 0;
-	tail = NLMSG_TAIL(n);
-	addattr_l(n, 4096, TCA_OPTIONS, NULL, 0);
+	tail = addattr_nest(n, 4096, TCA_OPTIONS);
 	while (argc) {
 		if (!strcmp(*argv, "hash")) {
 			int hash;
@@ -113,7 +112,7 @@ static int tcindex_parse_opt(struct filter_util *qu, char *handle, int argc,
 		argc--;
 		argv++;
 	}
-	tail->rta_len = (void *) NLMSG_TAIL(n) - (void *) tail;
+	addattr_nest_end(n, tail);
 	return 0;
 }
 
@@ -150,7 +149,7 @@ static int tcindex_print_opt(struct filter_util *qu, FILE *f,
 
 		if (RTA_PAYLOAD(tb[TCA_TCINDEX_SHIFT]) < sizeof(shift))
 			return -1;
-		shift = *(int *) RTA_DATA(tb[TCA_TCINDEX_SHIFT]);
+		shift = rta_getattr_u32(tb[TCA_TCINDEX_SHIFT]);
 		fprintf(f, "shift %d ", shift);
 	}
 	if (tb[TCA_TCINDEX_FALL_THROUGH]) {
@@ -159,7 +158,7 @@ static int tcindex_print_opt(struct filter_util *qu, FILE *f,
 		if (RTA_PAYLOAD(tb[TCA_TCINDEX_FALL_THROUGH]) <
 		    sizeof(fall_through))
 			return -1;
-		fall_through = *(int *) RTA_DATA(tb[TCA_TCINDEX_FALL_THROUGH]);
+		fall_through = rta_getattr_u32(tb[TCA_TCINDEX_FALL_THROUGH]);
 		fprintf(f, fall_through ? "fall_through " : "pass_on ");
 	}
 	if (tb[TCA_TCINDEX_CLASSID]) {
@@ -173,7 +172,7 @@ static int tcindex_print_opt(struct filter_util *qu, FILE *f,
 	}
 	if (tb[TCA_TCINDEX_ACT]) {
 		fprintf(f, "\n");
-		tc_print_action(f, tb[TCA_TCINDEX_ACT]);
+		tc_print_action(f, tb[TCA_TCINDEX_ACT], 0);
 	}
 	return 0;
 }

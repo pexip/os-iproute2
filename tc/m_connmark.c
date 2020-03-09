@@ -30,7 +30,8 @@ explain(void)
 	fprintf(stderr, "Usage: ... connmark [zone ZONE] [CONTROL] [index <INDEX>]\n");
 	fprintf(stderr, "where :\n"
 		"\tZONE is the conntrack zone\n"
-		"\tCONTROL := reclassify|pipe|drop|continue|ok\n");
+		"\tCONTROL := reclassify | pipe | drop | continue | ok |\n"
+		"\t           goto chain <CHAIN_INDEX>\n");
 }
 
 static void
@@ -80,9 +81,7 @@ parse_connmark(struct action_util *a, int *argc_p, char ***argv_p, int tca_id,
 		}
 	}
 
-	sel.action = TC_ACT_PIPE;
-	if (argc && !action_a2n(*argv, &sel.action, false))
-		NEXT_ARG_FWD();
+	parse_action_control_dflt(&argc, &argv, &sel.action, false, TC_ACT_PIPE);
 
 	if (argc) {
 		if (matches(*argv, "index") == 0) {
@@ -96,10 +95,9 @@ parse_connmark(struct action_util *a, int *argc_p, char ***argv_p, int tca_id,
 		}
 	}
 
-	tail = NLMSG_TAIL(n);
-	addattr_l(n, MAX_MSG, tca_id, NULL, 0);
+	tail = addattr_nest(n, MAX_MSG, tca_id);
 	addattr_l(n, MAX_MSG, TCA_CONNMARK_PARMS, &sel, sizeof(sel));
-	tail->rta_len = (char *)NLMSG_TAIL(n) - (char *)tail;
+	addattr_nest_end(n, tail);
 
 	*argc_p = argc;
 	*argv_p = argv;
@@ -116,15 +114,20 @@ static int print_connmark(struct action_util *au, FILE *f, struct rtattr *arg)
 
 	parse_rtattr_nested(tb, TCA_CONNMARK_MAX, arg);
 	if (tb[TCA_CONNMARK_PARMS] == NULL) {
-		fprintf(f, "[NULL connmark parameters]");
+		print_string(PRINT_FP, NULL, "%s", "[NULL connmark parameters]");
 		return -1;
 	}
 
 	ci = RTA_DATA(tb[TCA_CONNMARK_PARMS]);
 
-	fprintf(f, " connmark zone %d\n", ci->zone);
-	fprintf(f, "\t index %d ref %d bind %d", ci->index,
-		ci->refcnt, ci->bindcnt);
+	print_string(PRINT_ANY, "kind", "%s ", "connmark");
+	print_uint(PRINT_ANY, "zone", "zone %u", ci->zone);
+	print_action_control(f, " ", ci->action, "");
+
+	print_string(PRINT_FP, NULL, "%s", _SL_);
+	print_uint(PRINT_ANY, "index", "\t index %u", ci->index);
+	print_int(PRINT_ANY, "ref", " ref %d", ci->refcnt);
+	print_int(PRINT_ANY, "bind", " bind %d", ci->bindcnt);
 
 	if (show_stats) {
 		if (tb[TCA_CONNMARK_TM]) {
@@ -133,7 +136,7 @@ static int print_connmark(struct action_util *au, FILE *f, struct rtattr *arg)
 			print_tm(f, tm);
 		}
 	}
-	fprintf(f, "\n");
+	print_string(PRINT_FP, NULL, "%s", _SL_);
 
 	return 0;
 }
