@@ -27,7 +27,7 @@ Build-Depends: bison,
                texlive-latex-base,
                texlive-latex-extra,
                texlive-latex-recommended
-XS-Pexip-Upstream: http://ftp.debian.org/debian/ stretch
+XS-Pexip-Upstream: http://ftp.debian.org/debian/ buster
 
 Package: iproute2
 Priority: important
