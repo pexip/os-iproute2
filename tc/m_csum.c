@@ -24,7 +24,7 @@ explain(void)
 {
 	fprintf(stderr, "Usage: ... csum <UPDATE>\n"
 			"Where: UPDATE := <TARGET> [<UPDATE>]\n"
-			"       TARGET := { ip4h | icmp | igmp | tcp | udp | udplite | <SWEETS> }\n"
+			"       TARGET := { ip4h | icmp | igmp | tcp | udp | udplite | sctp | <SWEETS> }\n"
 			"       SWEETS := { and | or | \'+\' }\n");
 }
 
@@ -64,6 +64,9 @@ parse_csum_args(int *argc_p, char ***argv_p, struct tc_csum *sel)
 
 		else if (matches(*argv, "udplite") == 0)
 			sel->update_flags |= TCA_CSUM_UPDATE_FLAG_UDPLITE;
+
+		else if (matches(*argv, "sctp") == 0)
+			sel->update_flags |= TCA_CSUM_UPDATE_FLAG_SCTP;
 
 		else if ((matches(*argv, "and") == 0) ||
 			 (matches(*argv, "or") == 0) ||
@@ -120,8 +123,7 @@ parse_csum(struct action_util *a, int *argc_p,
 		return -1;
 	}
 
-	if (argc && !action_a2n(*argv, &sel.action, false))
-		NEXT_ARG_FWD();
+	parse_action_control_dflt(&argc, &argv, &sel.action, false, TC_ACT_OK);
 
 	if (argc) {
 		if (matches(*argv, "index") == 0) {
@@ -136,10 +138,9 @@ parse_csum(struct action_util *a, int *argc_p,
 		}
 	}
 
-	tail = NLMSG_TAIL(n);
-	addattr_l(n, MAX_MSG, tca_id, NULL, 0);
+	tail = addattr_nest(n, MAX_MSG, tca_id);
 	addattr_l(n, MAX_MSG, TCA_CSUM_PARMS, &sel, sizeof(sel));
-	tail->rta_len = (char *)NLMSG_TAIL(n) - (char *)tail;
+	addattr_nest_end(n, tail);
 
 	*argc_p = argc;
 	*argv_p = argv;
@@ -160,6 +161,8 @@ print_csum(struct action_util *au, FILE *f, struct rtattr *arg)
 	char *uflag_4 = "";
 	char *uflag_5 = "";
 	char *uflag_6 = "";
+	char *uflag_7 = "";
+	SPRINT_BUF(buf);
 
 	int uflag_count = 0;
 
@@ -191,15 +194,20 @@ print_csum(struct action_util *au, FILE *f, struct rtattr *arg)
 	CSUM_UFLAG_BUFFER(uflag_4, TCA_CSUM_UPDATE_FLAG_TCP, "tcp");
 	CSUM_UFLAG_BUFFER(uflag_5, TCA_CSUM_UPDATE_FLAG_UDP, "udp");
 	CSUM_UFLAG_BUFFER(uflag_6, TCA_CSUM_UPDATE_FLAG_UDPLITE, "udplite");
+	CSUM_UFLAG_BUFFER(uflag_7, TCA_CSUM_UPDATE_FLAG_SCTP, "sctp");
 	if (!uflag_count) {
 		uflag_1 = "?empty";
 	}
 
-	fprintf(f, "csum (%s%s%s%s%s%s) action %s\n",
-		uflag_1, uflag_2, uflag_3,
-		uflag_4, uflag_5, uflag_6,
-		action_n2a(sel->action));
-	fprintf(f, "\tindex %d ref %d bind %d", sel->index, sel->refcnt, sel->bindcnt);
+	snprintf(buf, sizeof(buf), "%s%s%s%s%s%s%s",
+		 uflag_1, uflag_2, uflag_3,
+		 uflag_4, uflag_5, uflag_6, uflag_7);
+	print_string(PRINT_ANY, "csum", "csum (%s) ", buf);
+
+	print_action_control(f, "action ", sel->action, "\n");
+	print_uint(PRINT_ANY, "index", "\tindex %u", sel->index);
+	print_int(PRINT_ANY, "ref", " ref %d", sel->refcnt);
+	print_int(PRINT_ANY, "bind", " bind %d", sel->bindcnt);
 
 	if (show_stats) {
 		if (tb[TCA_CSUM_TM]) {
@@ -208,7 +216,7 @@ print_csum(struct action_util *au, FILE *f, struct rtattr *arg)
 			print_tm(f, tm);
 		}
 	}
-	fprintf(f, "\n");
+	print_string(PRINT_FP, NULL, "%s", "\n");
 
 	return 0;
 }

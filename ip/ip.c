@@ -12,7 +12,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
-#include <syslog.h>
 #include <fcntl.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -30,11 +29,10 @@ int human_readable;
 int use_iec;
 int show_stats;
 int show_details;
-int resolve_hosts;
 int oneline;
 int brief;
+int json;
 int timestamp;
-const char *_SL_;
 int force;
 int max_flush_loops = 10;
 int batch_mode;
@@ -51,14 +49,15 @@ static void usage(void)
 "       ip [ -force ] -batch filename\n"
 "where  OBJECT := { link | address | addrlabel | route | rule | neigh | ntable |\n"
 "                   tunnel | tuntap | maddress | mroute | mrule | monitor | xfrm |\n"
-"                   netns | l2tp | fou | macsec | tcp_metrics | token | netconf | ila }\n"
+"                   netns | l2tp | fou | macsec | tcp_metrics | token | netconf | ila |\n"
+"                   vrf | sr }\n"
 "       OPTIONS := { -V[ersion] | -s[tatistics] | -d[etails] | -r[esolve] |\n"
-"                    -h[uman-readable] | -iec |\n"
+"                    -h[uman-readable] | -iec | -j[son] | -p[retty] |\n"
 "                    -f[amily] { inet | inet6 | ipx | dnet | mpls | bridge | link } |\n"
-"                    -4 | -6 | -I | -D | -B | -0 |\n"
+"                    -4 | -6 | -I | -D | -M | -B | -0 |\n"
 "                    -l[oops] { maximum-addr-flush-attempts } | -br[ief] |\n"
 "                    -o[neline] | -t[imestamp] | -ts[hort] | -b[atch] [filename] |\n"
-"                    -rc[vbuf] [size] | -n[etns] name | -a[ll] | -c[olor]}\n");
+"                    -rc[vbuf] [size] | -n[etns] name | -a[ll] | -c[olor]}\n");
 	exit(-1);
 }
 
@@ -99,6 +98,8 @@ static const struct cmd {
 	{ "mrule",	do_multirule },
 	{ "netns",	do_netns },
 	{ "netconf",	do_ipnetconf },
+	{ "vrf",	do_ipvrf},
+	{ "sr",		do_seg6 },
 	{ "help",	do_help },
 	{ 0 }
 };
@@ -170,6 +171,19 @@ int main(int argc, char **argv)
 {
 	char *basename;
 	char *batch_file = NULL;
+	int color = 0;
+
+	/* to run vrf exec without root, capabilities might be set, drop them
+	 * if not needed as the first thing.
+	 * execv will drop them for the child command.
+	 * vrf exec requires:
+	 * - cap_dac_override to create the cgroup subdir in /sys
+	 * - cap_sys_admin to load the BPF program
+	 * - cap_net_admin to set the socket into the cgroup
+	 */
+	if (argc < 3 || strcmp(argv[1], "vrf") != 0 ||
+			strcmp(argv[2], "exec") != 0)
+		drop_cap();
 
 	basename = strrchr(argv[0], '/');
 	if (basename == NULL)
@@ -238,10 +252,6 @@ int main(int argc, char **argv)
 		} else if (matches(opt, "-tshort") == 0) {
 			++timestamp;
 			++timestamp_short;
-#if 0
-		} else if (matches(opt, "-numeric") == 0) {
-			rtnl_names_numeric++;
-#endif
 		} else if (matches(opt, "-Version") == 0) {
 			printf("ip utility, iproute2-ss%s\n", SNAPSHOT);
 			exit(0);
@@ -255,6 +265,10 @@ int main(int argc, char **argv)
 			batch_file = argv[1];
 		} else if (matches(opt, "-brief") == 0) {
 			++brief;
+		} else if (matches(opt, "-json") == 0) {
+			++json;
+		} else if (matches(opt, "-pretty") == 0) {
+			++pretty;
 		} else if (matches(opt, "-rcvbuf") == 0) {
 			unsigned int size;
 
@@ -268,8 +282,7 @@ int main(int argc, char **argv)
 				exit(-1);
 			}
 			rcvbuf = size;
-		} else if (matches(opt, "-color") == 0) {
-			enable_color();
+		} else if (matches_color(opt, &color)) {
 		} else if (matches(opt, "-help") == 0) {
 			usage();
 		} else if (matches(opt, "-netns") == 0) {
@@ -288,6 +301,8 @@ int main(int argc, char **argv)
 	}
 
 	_SL_ = oneline ? "\\" : "\n";
+
+	check_enable_color(color, json);
 
 	if (batch_file)
 		return batch(batch_file);

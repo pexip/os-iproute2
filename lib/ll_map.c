@@ -13,7 +13,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
-#include <syslog.h>
 #include <fcntl.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -30,7 +29,7 @@ struct ll_cache {
 	unsigned	flags;
 	unsigned 	index;
 	unsigned short	type;
-	char		name[IFNAMSIZ];
+	char		name[];
 };
 
 #define IDXMAP_SIZE	1024
@@ -78,8 +77,7 @@ static struct ll_cache *ll_get_by_name(const char *name)
 	return NULL;
 }
 
-int ll_remember_index(const struct sockaddr_nl *who,
-		      struct nlmsghdr *n, void *arg)
+int ll_remember_index(struct nlmsghdr *n, void *arg)
 {
 	unsigned int h;
 	const char *ifname;
@@ -120,7 +118,7 @@ int ll_remember_index(const struct sockaddr_nl *who,
 		return 0;
 	}
 
-	im = malloc(sizeof(*im));
+	im = malloc(sizeof(*im) + strlen(ifname) + 1);
 	if (im == NULL)
 		return 0;
 	im->index = ifi->ifi_index;
@@ -137,8 +135,26 @@ int ll_remember_index(const struct sockaddr_nl *who,
 	return 0;
 }
 
-const char *ll_idx_n2a(unsigned idx, char *buf)
+const char *ll_idx_n2a(unsigned int idx)
 {
+	static char buf[IFNAMSIZ];
+
+	snprintf(buf, sizeof(buf), "if%u", idx);
+	return buf;
+}
+
+static unsigned int ll_idx_a2n(const char *name)
+{
+	unsigned int idx;
+
+	if (sscanf(name, "if%u", &idx) != 1)
+		return 0;
+	return idx;
+}
+
+const char *ll_index_to_name(unsigned int idx)
+{
+	static char buf[IFNAMSIZ];
 	const struct ll_cache *im;
 
 	if (idx == 0)
@@ -149,16 +165,9 @@ const char *ll_idx_n2a(unsigned idx, char *buf)
 		return im->name;
 
 	if (if_indextoname(idx, buf) == NULL)
-		snprintf(buf, IFNAMSIZ, "if%d", idx);
+		snprintf(buf, IFNAMSIZ, "if%u", idx);
 
 	return buf;
-}
-
-const char *ll_index_to_name(unsigned idx)
-{
-	static char nbuf[IFNAMSIZ];
-
-	return ll_idx_n2a(idx, nbuf);
 }
 
 int ll_index_to_type(unsigned idx)
@@ -197,7 +206,7 @@ unsigned ll_name_to_index(const char *name)
 
 	idx = if_nametoindex(name);
 	if (idx == 0)
-		sscanf(name, "if%u", &idx);
+		idx = ll_idx_a2n(name);
 	return idx;
 }
 
@@ -208,7 +217,7 @@ void ll_init_map(struct rtnl_handle *rth)
 	if (initialized)
 		return;
 
-	if (rtnl_wilddump_request(rth, AF_UNSPEC, RTM_GETLINK) < 0) {
+	if (rtnl_linkdump_req(rth, AF_UNSPEC) < 0) {
 		perror("Cannot send dump request");
 		exit(1);
 	}

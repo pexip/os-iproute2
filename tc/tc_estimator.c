@@ -13,7 +13,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
-#include <syslog.h>
 #include <fcntl.h>
 #include <math.h>
 #include <sys/socket.h>
@@ -21,6 +20,7 @@
 #include <arpa/inet.h>
 #include <string.h>
 
+#include "utils.h"
 #include "tc_core.h"
 
 int tc_setup_estimator(unsigned int A, unsigned int time_const, struct tc_estimator *est)

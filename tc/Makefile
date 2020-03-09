@@ -1,12 +1,9 @@
+# SPDX-License-Identifier: GPL-2.0
 TCOBJ= tc.o tc_qdisc.o tc_class.o tc_filter.o tc_util.o tc_monitor.o \
-       tc_exec.o tc_bpf.o m_police.o m_estimator.o m_action.o m_ematch.o \
+       tc_exec.o m_police.o m_estimator.o m_action.o m_ematch.o \
        emp_ematch.yacc.o emp_ematch.lex.o
 
-include ../Config
-
-ifeq ($(IP_CONFIG_SETNS),y)
-	CFLAGS += -DHAVE_SETNS
-endif
+include ../config.mk
 
 SHARED_LIBS ?= y
 
@@ -15,6 +12,7 @@ TCMODULES += q_fifo.o
 TCMODULES += q_sfq.o
 TCMODULES += q_red.o
 TCMODULES += q_prio.o
+TCMODULES += q_skbprio.o
 TCMODULES += q_tbf.o
 TCMODULES += q_cbq.o
 TCMODULES += q_rr.o
@@ -45,13 +43,18 @@ TCMODULES += m_nat.o
 TCMODULES += m_pedit.o
 TCMODULES += m_ife.o
 TCMODULES += m_skbedit.o
+TCMODULES += m_skbmod.o
 TCMODULES += m_csum.o
 TCMODULES += m_simple.o
 TCMODULES += m_vlan.o
 TCMODULES += m_connmark.o
 TCMODULES += m_bpf.o
+TCMODULES += m_tunnel_key.o
+TCMODULES += m_sample.o
 TCMODULES += p_ip.o
+TCMODULES += p_ip6.o
 TCMODULES += p_icmp.o
+TCMODULES += p_eth.o
 TCMODULES += p_tcp.o
 TCMODULES += p_udp.o
 TCMODULES += em_nbyte.o
@@ -64,10 +67,14 @@ TCMODULES += q_codel.o
 TCMODULES += q_fq_codel.o
 TCMODULES += q_fq.o
 TCMODULES += q_pie.o
+TCMODULES += q_cake.o
 TCMODULES += q_hhf.o
 TCMODULES += q_clsact.o
 TCMODULES += e_bpf.o
 TCMODULES += f_matchall.o
+TCMODULES += q_cbs.o
+TCMODULES += q_etf.o
+TCMODULES += q_taprio.o
 
 TCSO :=
 ifeq ($(TC_CONFIG_ATM),y)
@@ -77,6 +84,7 @@ endif
 ifneq ($(TC_CONFIG_NO_XT),y)
   ifeq ($(TC_CONFIG_XT),y)
     TCSO += m_xt.so
+    TCMODULES += em_ipt.o
     ifeq ($(TC_CONFIG_IPSET),y)
       TCMODULES += em_ipset.o
     endif
@@ -94,13 +102,8 @@ ifneq ($(TC_CONFIG_NO_XT),y)
   endif
 endif
 
-ifeq ($(TC_CONFIG_ELF),y)
-  CFLAGS += -DHAVE_ELF
-  LDLIBS += -lelf
-endif
-
 TCOBJ += $(TCMODULES)
-LDLIBS += -L. -ltc -lm
+LDLIBS += -L. -lm
 
 ifeq ($(SHARED_LIBS),y)
 LDLIBS += -ldl
@@ -125,16 +128,16 @@ CFLAGS += -DYY_NO_INPUT
 MODDESTDIR := $(DESTDIR)$(LIBDIR)/tc
 
 %.so: %.c
-	$(QUIET_CC)$(CC) $(CFLAGS) $(LDFLAGS) -shared -fpic $< -o $@
+	$(QUIET_CC)$(CC) $(CFLAGS) $(CPPFLAGS) $(LDFLAGS) -shared -fpic $< -o $@
 
 
-all: libtc.a tc $(TCSO)
+all: tc $(TCSO)
 
-tc: $(TCOBJ) $(TCLIB)
+tc: $(TCOBJ) $(LIBNETLINK) libtc.a
 	$(QUIET_LINK)$(CC) $^ $(LDFLAGS) $(LDLIBS) -o $@
 
 libtc.a: $(TCLIB)
-	$(QUIET_AR)$(AR) rcs $@ $(TCLIB)
+	$(QUIET_AR)$(AR) rcs $@ $^
 
 install: all
 	mkdir -p $(MODDESTDIR)
@@ -155,15 +158,21 @@ clean:
 	rm -f emp_ematch.yacc.*
 
 q_atm.so: q_atm.c
-	$(QUIET_CC)$(CC) $(CFLAGS) $(LDFLAGS) -shared -fpic -o q_atm.so q_atm.c -latm
+	$(QUIET_CC)$(CC) $(CFLAGS) $(CPPFLAGS) $(LDFLAGS) -shared -fpic -o q_atm.so q_atm.c -latm
 
 m_xt.so: m_xt.c
-	$(QUIET_CC)$(CC) $(CFLAGS) $(LDFLAGS) -shared -fpic -o m_xt.so m_xt.c $$($(PKG_CONFIG) xtables --cflags --libs)
+	$(QUIET_CC)$(CC) $(CFLAGS) $(CPPFLAGS) $(LDFLAGS) -shared -fpic -o m_xt.so m_xt.c $$($(PKG_CONFIG) xtables --cflags --libs)
 
 m_xt_old.so: m_xt_old.c
-	$(QUIET_CC)$(CC) $(CFLAGS) $(LDFLAGS) -shared -fpic -o m_xt_old.so m_xt_old.c $$($(PKG_CONFIG) xtables --cflags --libs)
+	$(QUIET_CC)$(CC) $(CFLAGS) $(CPPFLAGS) $(LDFLAGS) -shared -fpic -o m_xt_old.so m_xt_old.c $$($(PKG_CONFIG) xtables --cflags --libs)
 
 em_ipset.o: CFLAGS += $$($(PKG_CONFIG) xtables --cflags)
+
+em_ipt.o: CFLAGS += $$($(PKG_CONFIG) xtables --cflags)
+
+ifeq ($(TC_CONFIG_XT),y)
+  LDLIBS += $$($(PKG_CONFIG) xtables --libs)
+endif
 
 %.yacc.c: %.y
 	$(QUIET_YACC)$(YACC) $(YACCFLAGS) -o $@ $<

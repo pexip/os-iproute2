@@ -22,7 +22,10 @@
 static void print_explain(FILE *f)
 {
 	fprintf(f,
-		"Usage: ... bridge_slave [ state STATE ] [ priority PRIO ] [cost COST ]\n"
+		"Usage: ... bridge_slave [ fdb_flush ]\n"
+		"                        [ state STATE ]\n"
+		"                        [ priority PRIO ]\n"
+		"                        [ cost COST ]\n"
 		"                        [ guard {on | off} ]\n"
 		"                        [ hairpin {on | off} ]\n"
 		"                        [ fastleave {on | off} ]\n"
@@ -34,6 +37,11 @@ static void print_explain(FILE *f)
 		"                        [ mcast_router MULTICAST_ROUTER ]\n"
 		"                        [ mcast_fast_leave {on | off} ]\n"
 		"                        [ mcast_flood {on | off} ]\n"
+		"                        [ group_fwd_mask MASK ]\n"
+		"                        [ neigh_suppress {on | off} ]\n"
+		"                        [ vlan_tunnel {on | off} ]\n"
+		"                        [ isolated {on | off} ]\n"
+		"                        [ backup_port DEVICE ] [ nobackup_port ]\n"
 	);
 }
 
@@ -50,17 +58,68 @@ static const char *port_states[] = {
 	[BR_STATE_BLOCKING] = "blocking",
 };
 
+static const char *fwd_mask_tbl[16] = {
+	[0]	= "stp",
+	[2]	= "lacp",
+	[14]	= "lldp"
+};
+
 static void print_portstate(FILE *f, __u8 state)
 {
 	if (state <= BR_STATE_BLOCKING)
-		fprintf(f, "state %s ", port_states[state]);
+		print_string(PRINT_ANY,
+			     "state",
+			     "state %s ",
+			     port_states[state]);
 	else
-		fprintf(f, "state (%d) ", state);
+		print_int(PRINT_ANY, "state_index", "state (%d) ", state);
 }
 
-static void print_onoff(FILE *f, char *flag, __u8 val)
+static void _print_onoff(FILE *f, char *json_flag, char *flag, __u8 val)
 {
-	fprintf(f, "%s %s ", flag, val ? "on" : "off");
+	if (is_json_context())
+		print_bool(PRINT_JSON, flag, NULL, val);
+	else
+		fprintf(f, "%s %s ", flag, val ? "on" : "off");
+}
+
+static void _print_timer(FILE *f, const char *attr, struct rtattr *timer)
+{
+	struct timeval tv;
+
+	__jiffies_to_tv(&tv, rta_getattr_u64(timer));
+	if (is_json_context()) {
+		json_writer_t *jw = get_json_writer();
+
+		jsonw_name(jw, attr);
+		jsonw_printf(jw, "%i.%.2i",
+			     (int)tv.tv_sec, (int)tv.tv_usec / 10000);
+	} else {
+		fprintf(f, "%s %4i.%.2i ", attr, (int)tv.tv_sec,
+			(int)tv.tv_usec / 10000);
+	}
+}
+
+static void _bitmask2str(__u16 bitmask, char *dst, size_t dst_size,
+			 const char **tbl)
+{
+	int len, i;
+
+	for (i = 0, len = 0; bitmask; i++, bitmask >>= 1) {
+		if (bitmask & 0x1) {
+			if (tbl[i])
+				len += snprintf(dst + len, dst_size - len, "%s,",
+						tbl[i]);
+			else
+				len += snprintf(dst + len, dst_size - len, "0x%x,",
+						(1 << i));
+		}
+	}
+
+	if (!len)
+		snprintf(dst, dst_size, "0x0");
+	else
+		dst[len - 1] = 0;
 }
 
 static void bridge_slave_print_opt(struct link_util *lu, FILE *f,
@@ -73,59 +132,70 @@ static void bridge_slave_print_opt(struct link_util *lu, FILE *f,
 		print_portstate(f, rta_getattr_u8(tb[IFLA_BRPORT_STATE]));
 
 	if (tb[IFLA_BRPORT_PRIORITY])
-		fprintf(f, "priority %d ",
-			rta_getattr_u16(tb[IFLA_BRPORT_PRIORITY]));
+		print_int(PRINT_ANY,
+			  "priority",
+			  "priority %d ",
+			  rta_getattr_u16(tb[IFLA_BRPORT_PRIORITY]));
 
 	if (tb[IFLA_BRPORT_COST])
-		fprintf(f, "cost %d ",
-			rta_getattr_u32(tb[IFLA_BRPORT_COST]));
+		print_int(PRINT_ANY,
+			  "cost",
+			  "cost %d ",
+			  rta_getattr_u32(tb[IFLA_BRPORT_COST]));
 
 	if (tb[IFLA_BRPORT_MODE])
-		print_onoff(f, "hairpin",
-			    rta_getattr_u8(tb[IFLA_BRPORT_MODE]));
+		_print_onoff(f, "mode", "hairpin",
+			     rta_getattr_u8(tb[IFLA_BRPORT_MODE]));
 
 	if (tb[IFLA_BRPORT_GUARD])
-		print_onoff(f, "guard",
-			    rta_getattr_u8(tb[IFLA_BRPORT_GUARD]));
+		_print_onoff(f, "guard", "guard",
+			     rta_getattr_u8(tb[IFLA_BRPORT_GUARD]));
 
 	if (tb[IFLA_BRPORT_PROTECT])
-		print_onoff(f, "root_block",
-			    rta_getattr_u8(tb[IFLA_BRPORT_PROTECT]));
+		_print_onoff(f, "protect", "root_block",
+			     rta_getattr_u8(tb[IFLA_BRPORT_PROTECT]));
 
 	if (tb[IFLA_BRPORT_FAST_LEAVE])
-		print_onoff(f, "fastleave",
-			    rta_getattr_u8(tb[IFLA_BRPORT_FAST_LEAVE]));
+		_print_onoff(f, "fast_leave", "fastleave",
+			     rta_getattr_u8(tb[IFLA_BRPORT_FAST_LEAVE]));
 
 	if (tb[IFLA_BRPORT_LEARNING])
-		print_onoff(f, "learning",
-			rta_getattr_u8(tb[IFLA_BRPORT_LEARNING]));
+		_print_onoff(f, "learning", "learning",
+			     rta_getattr_u8(tb[IFLA_BRPORT_LEARNING]));
 
 	if (tb[IFLA_BRPORT_UNICAST_FLOOD])
-		print_onoff(f, "flood",
-			rta_getattr_u8(tb[IFLA_BRPORT_UNICAST_FLOOD]));
+		_print_onoff(f, "unicast_flood", "flood",
+			     rta_getattr_u8(tb[IFLA_BRPORT_UNICAST_FLOOD]));
 
 	if (tb[IFLA_BRPORT_ID])
-		fprintf(f, "port_id 0x%x ",
-			rta_getattr_u16(tb[IFLA_BRPORT_ID]));
+		print_0xhex(PRINT_ANY, "id", "port_id %#llx ",
+			    rta_getattr_u16(tb[IFLA_BRPORT_ID]));
 
 	if (tb[IFLA_BRPORT_NO])
-		fprintf(f, "port_no 0x%x ",
-			rta_getattr_u16(tb[IFLA_BRPORT_NO]));
+		print_0xhex(PRINT_ANY, "no", "port_no %#llx ",
+			   rta_getattr_u16(tb[IFLA_BRPORT_NO]));
 
 	if (tb[IFLA_BRPORT_DESIGNATED_PORT])
-		fprintf(f, "designated_port %u ",
-			rta_getattr_u16(tb[IFLA_BRPORT_DESIGNATED_PORT]));
+		print_uint(PRINT_ANY,
+			   "designated_port",
+			   "designated_port %u ",
+			   rta_getattr_u16(tb[IFLA_BRPORT_DESIGNATED_PORT]));
 
 	if (tb[IFLA_BRPORT_DESIGNATED_COST])
-		fprintf(f, "designated_cost %u ",
-			rta_getattr_u16(tb[IFLA_BRPORT_DESIGNATED_COST]));
+		print_uint(PRINT_ANY,
+			   "designated_cost",
+			   "designated_cost %u ",
+			   rta_getattr_u16(tb[IFLA_BRPORT_DESIGNATED_COST]));
 
 	if (tb[IFLA_BRPORT_BRIDGE_ID]) {
 		char bridge_id[32];
 
 		br_dump_bridge_id(RTA_DATA(tb[IFLA_BRPORT_BRIDGE_ID]),
 				  bridge_id, sizeof(bridge_id));
-		fprintf(f, "designated_bridge %s ", bridge_id);
+		print_string(PRINT_ANY,
+			     "bridge_id",
+			     "designated_bridge %s ",
+			     bridge_id);
 	}
 
 	if (tb[IFLA_BRPORT_ROOT_ID]) {
@@ -133,65 +203,90 @@ static void bridge_slave_print_opt(struct link_util *lu, FILE *f,
 
 		br_dump_bridge_id(RTA_DATA(tb[IFLA_BRPORT_ROOT_ID]),
 				  root_id, sizeof(root_id));
-		fprintf(f, "designated_root %s ", root_id);
+		print_string(PRINT_ANY,
+			     "root_id",
+			     "designated_root %s ", root_id);
 	}
 
-	if (tb[IFLA_BRPORT_HOLD_TIMER]) {
-		struct timeval tv;
-		__u64 htimer;
+	if (tb[IFLA_BRPORT_HOLD_TIMER])
+		_print_timer(f, "hold_timer", tb[IFLA_BRPORT_HOLD_TIMER]);
 
-		htimer = rta_getattr_u64(tb[IFLA_BRPORT_HOLD_TIMER]);
-		__jiffies_to_tv(&tv, htimer);
-		fprintf(f, "hold_timer %4i.%.2i ", (int)tv.tv_sec,
-			(int)tv.tv_usec/10000);
-	}
+	if (tb[IFLA_BRPORT_MESSAGE_AGE_TIMER])
+		_print_timer(f, "message_age_timer",
+			     tb[IFLA_BRPORT_MESSAGE_AGE_TIMER]);
 
-	if (tb[IFLA_BRPORT_MESSAGE_AGE_TIMER]) {
-		struct timeval tv;
-		__u64 agetimer;
-
-		agetimer = rta_getattr_u64(tb[IFLA_BRPORT_MESSAGE_AGE_TIMER]);
-		__jiffies_to_tv(&tv, agetimer);
-		fprintf(f, "message_age_timer %4i.%.2i ", (int)tv.tv_sec,
-			(int)tv.tv_usec/10000);
-	}
-
-	if (tb[IFLA_BRPORT_FORWARD_DELAY_TIMER]) {
-		struct timeval tv;
-		__u64 fwdtimer;
-
-		fwdtimer = rta_getattr_u64(tb[IFLA_BRPORT_FORWARD_DELAY_TIMER]);
-		__jiffies_to_tv(&tv, fwdtimer);
-		fprintf(f, "forward_delay_timer %4i.%.2i ", (int)tv.tv_sec,
-			(int)tv.tv_usec/10000);
-	}
+	if (tb[IFLA_BRPORT_FORWARD_DELAY_TIMER])
+		_print_timer(f, "forward_delay_timer",
+			     tb[IFLA_BRPORT_FORWARD_DELAY_TIMER]);
 
 	if (tb[IFLA_BRPORT_TOPOLOGY_CHANGE_ACK])
-		fprintf(f, "topology_change_ack %u ",
-			rta_getattr_u8(tb[IFLA_BRPORT_TOPOLOGY_CHANGE_ACK]));
+		print_uint(PRINT_ANY,
+			   "topology_change_ack",
+			   "topology_change_ack %u ",
+			   rta_getattr_u8(tb[IFLA_BRPORT_TOPOLOGY_CHANGE_ACK]));
 
 	if (tb[IFLA_BRPORT_CONFIG_PENDING])
-		fprintf(f, "config_pending %u ",
-			rta_getattr_u8(tb[IFLA_BRPORT_CONFIG_PENDING]));
+		print_uint(PRINT_ANY,
+			   "config_pending",
+			   "config_pending %u ",
+			   rta_getattr_u8(tb[IFLA_BRPORT_CONFIG_PENDING]));
+
 	if (tb[IFLA_BRPORT_PROXYARP])
-		print_onoff(f, "proxy_arp",
-			    rta_getattr_u8(tb[IFLA_BRPORT_PROXYARP]));
+		_print_onoff(f, "proxyarp", "proxy_arp",
+			     rta_getattr_u8(tb[IFLA_BRPORT_PROXYARP]));
 
 	if (tb[IFLA_BRPORT_PROXYARP_WIFI])
-		print_onoff(f, "proxy_arp_wifi",
-			    rta_getattr_u8(tb[IFLA_BRPORT_PROXYARP_WIFI]));
+		_print_onoff(f, "proxyarp_wifi", "proxy_arp_wifi",
+			     rta_getattr_u8(tb[IFLA_BRPORT_PROXYARP_WIFI]));
 
 	if (tb[IFLA_BRPORT_MULTICAST_ROUTER])
-		fprintf(f, "mcast_router %u ",
-			rta_getattr_u8(tb[IFLA_BRPORT_MULTICAST_ROUTER]));
+		print_uint(PRINT_ANY,
+			   "multicast_router",
+			   "mcast_router %u ",
+			   rta_getattr_u8(tb[IFLA_BRPORT_MULTICAST_ROUTER]));
 
 	if (tb[IFLA_BRPORT_FAST_LEAVE])
-		print_onoff(f, "mcast_fast_leave",
-			    rta_getattr_u8(tb[IFLA_BRPORT_FAST_LEAVE]));
+		// not printing any json here because
+		// we already printed fast_leave before
+		print_string(PRINT_FP,
+			     NULL,
+			     "mcast_fast_leave %s ",
+			     rta_getattr_u8(tb[IFLA_BRPORT_FAST_LEAVE]) ? "on" : "off");
 
 	if (tb[IFLA_BRPORT_MCAST_FLOOD])
-		print_onoff(f, "mcast_flood",
-			rta_getattr_u8(tb[IFLA_BRPORT_MCAST_FLOOD]));
+		_print_onoff(f, "mcast_flood", "mcast_flood",
+			     rta_getattr_u8(tb[IFLA_BRPORT_MCAST_FLOOD]));
+
+	if (tb[IFLA_BRPORT_NEIGH_SUPPRESS])
+		_print_onoff(f, "neigh_suppress", "neigh_suppress",
+			     rta_getattr_u8(tb[IFLA_BRPORT_NEIGH_SUPPRESS]));
+
+	if (tb[IFLA_BRPORT_GROUP_FWD_MASK]) {
+		char convbuf[256];
+		__u16 fwd_mask;
+
+		fwd_mask = rta_getattr_u16(tb[IFLA_BRPORT_GROUP_FWD_MASK]);
+		print_0xhex(PRINT_ANY, "group_fwd_mask",
+			    "group_fwd_mask %#llx ", fwd_mask);
+		_bitmask2str(fwd_mask, convbuf, sizeof(convbuf), fwd_mask_tbl);
+		print_string(PRINT_ANY, "group_fwd_mask_str",
+			     "group_fwd_mask_str %s ", convbuf);
+	}
+
+	if (tb[IFLA_BRPORT_VLAN_TUNNEL])
+		_print_onoff(f, "vlan_tunnel", "vlan_tunnel",
+			     rta_getattr_u8(tb[IFLA_BRPORT_VLAN_TUNNEL]));
+
+	if (tb[IFLA_BRPORT_ISOLATED])
+		_print_onoff(f, "isolated", "isolated",
+			     rta_getattr_u8(tb[IFLA_BRPORT_ISOLATED]));
+
+	if (tb[IFLA_BRPORT_BACKUP_PORT]) {
+		int backup_p = rta_getattr_u32(tb[IFLA_BRPORT_BACKUP_PORT]);
+
+		print_string(PRINT_ANY, "backup_port", "backup_port %s ",
+			     ll_index_to_name(backup_p));
+	}
 }
 
 static void bridge_slave_parse_on_off(char *arg_name, char *arg_val,
@@ -217,7 +312,9 @@ static int bridge_slave_parse_opt(struct link_util *lu, int argc, char **argv,
 	__u32 cost;
 
 	while (argc > 0) {
-		if (matches(*argv, "state") == 0) {
+		if (matches(*argv, "fdb_flush") == 0) {
+			addattr(n, 1024, IFLA_BRPORT_FLUSH);
+		} else if (matches(*argv, "state") == 0) {
 			NEXT_ARG();
 			if (get_u8(&state, *argv, 0))
 				invarg("state is invalid", *argv);
@@ -280,6 +377,35 @@ static int bridge_slave_parse_opt(struct link_util *lu, int argc, char **argv,
 			NEXT_ARG();
 			bridge_slave_parse_on_off("mcast_fast_leave", *argv, n,
 						  IFLA_BRPORT_FAST_LEAVE);
+		} else if (matches(*argv, "neigh_suppress") == 0) {
+			NEXT_ARG();
+			bridge_slave_parse_on_off("neigh_suppress", *argv, n,
+						  IFLA_BRPORT_NEIGH_SUPPRESS);
+		} else if (matches(*argv, "group_fwd_mask") == 0) {
+			__u16 mask;
+
+			NEXT_ARG();
+			if (get_u16(&mask, *argv, 0))
+				invarg("invalid group_fwd_mask", *argv);
+			addattr16(n, 1024, IFLA_BRPORT_GROUP_FWD_MASK, mask);
+		} else if (matches(*argv, "vlan_tunnel") == 0) {
+			NEXT_ARG();
+			bridge_slave_parse_on_off("vlan_tunnel", *argv, n,
+						  IFLA_BRPORT_VLAN_TUNNEL);
+		} else if (matches(*argv, "isolated") == 0) {
+			NEXT_ARG();
+			bridge_slave_parse_on_off("isolated", *argv, n,
+						  IFLA_BRPORT_ISOLATED);
+		} else if (matches(*argv, "backup_port") == 0) {
+			int ifindex;
+
+			NEXT_ARG();
+			ifindex = ll_name_to_index(*argv);
+			if (!ifindex)
+				invarg("Device does not exist\n", *argv);
+			addattr32(n, 1024, IFLA_BRPORT_BACKUP_PORT, ifindex);
+		} else if (matches(*argv, "nobackup_port") == 0) {
+			addattr32(n, 1024, IFLA_BRPORT_BACKUP_PORT, 0);
 		} else if (matches(*argv, "help") == 0) {
 			explain();
 			return -1;
@@ -307,4 +433,6 @@ struct link_util bridge_slave_link_util = {
 	.print_opt	= bridge_slave_print_opt,
 	.parse_opt	= bridge_slave_parse_opt,
 	.print_help     = bridge_slave_print_help,
+	.parse_ifla_xstats = bridge_parse_xstats,
+	.print_ifla_xstats = bridge_print_xstats,
 };

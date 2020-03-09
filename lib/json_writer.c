@@ -1,13 +1,9 @@
+/* SPDX-License-Identifier: (GPL-2.0 OR BSD-2-Clause) */
 /*
  * Simple streaming JSON writer
  *
  * This takes care of the annoying bits of JSON syntax like the commas
  * after elements
- *
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version
- * 2 of the License, or (at your option) any later version.
  *
  * Authors:	Stephen Hemminger <stephen@networkplumber.org>
  */
@@ -156,7 +152,8 @@ void jsonw_name(json_writer_t *self, const char *name)
 		putc(' ', self->out);
 }
 
-static void jsonw_printf(json_writer_t *self, const char *fmt, ...)
+__attribute__((format(printf, 2, 3)))
+void jsonw_printf(json_writer_t *self, const char *fmt, ...)
 {
 	va_list ap;
 
@@ -180,10 +177,15 @@ void jsonw_end_object(json_writer_t *self)
 void jsonw_start_array(json_writer_t *self)
 {
 	jsonw_begin(self, '[');
+	if (self->pretty)
+		putc(' ', self->out);
 }
 
 void jsonw_end_array(json_writer_t *self)
 {
+	if (self->pretty && self->sep)
+		putc(' ', self->out);
+	self->sep = '\0';
 	jsonw_end(self, ']');
 }
 
@@ -199,7 +201,6 @@ void jsonw_bool(json_writer_t *self, bool val)
 	jsonw_printf(self, "%s", val ? "true" : "false");
 }
 
-#ifdef notused
 void jsonw_null(json_writer_t *self)
 {
 	jsonw_printf(self, "null");
@@ -209,14 +210,43 @@ void jsonw_float(json_writer_t *self, double num)
 {
 	jsonw_printf(self, "%g", num);
 }
-#endif
 
-void jsonw_uint(json_writer_t *self, uint64_t num)
+void jsonw_hu(json_writer_t *self, unsigned short num)
+{
+	jsonw_printf(self, "%hu", num);
+}
+
+void jsonw_uint(json_writer_t *self, unsigned int num)
+{
+	jsonw_printf(self, "%u", num);
+}
+
+void jsonw_u64(json_writer_t *self, uint64_t num)
 {
 	jsonw_printf(self, "%"PRIu64, num);
 }
 
-void jsonw_int(json_writer_t *self, int64_t num)
+void jsonw_xint(json_writer_t *self, uint64_t num)
+{
+	jsonw_printf(self, "%"PRIx64, num);
+}
+
+void jsonw_luint(json_writer_t *self, unsigned long num)
+{
+	jsonw_printf(self, "%lu", num);
+}
+
+void jsonw_lluint(json_writer_t *self, unsigned long long num)
+{
+	jsonw_printf(self, "%llu", num);
+}
+
+void jsonw_int(json_writer_t *self, int num)
+{
+	jsonw_printf(self, "%d", num);
+}
+
+void jsonw_s64(json_writer_t *self, int64_t num)
 {
 	jsonw_printf(self, "%"PRId64, num);
 }
@@ -234,33 +264,69 @@ void jsonw_bool_field(json_writer_t *self, const char *prop, bool val)
 	jsonw_bool(self, val);
 }
 
-#ifdef notused
 void jsonw_float_field(json_writer_t *self, const char *prop, double val)
 {
 	jsonw_name(self, prop);
 	jsonw_float(self, val);
 }
-#endif
 
-void jsonw_uint_field(json_writer_t *self, const char *prop, uint64_t num)
+void jsonw_uint_field(json_writer_t *self, const char *prop, unsigned int num)
 {
 	jsonw_name(self, prop);
 	jsonw_uint(self, num);
 }
 
-void jsonw_int_field(json_writer_t *self, const char *prop, int64_t num)
+void jsonw_u64_field(json_writer_t *self, const char *prop, uint64_t num)
+{
+	jsonw_name(self, prop);
+	jsonw_u64(self, num);
+}
+
+void jsonw_xint_field(json_writer_t *self, const char *prop, uint64_t num)
+{
+	jsonw_name(self, prop);
+	jsonw_xint(self, num);
+}
+
+void jsonw_hu_field(json_writer_t *self, const char *prop, unsigned short num)
+{
+	jsonw_name(self, prop);
+	jsonw_hu(self, num);
+}
+
+void jsonw_luint_field(json_writer_t *self,
+			const char *prop,
+			unsigned long num)
+{
+	jsonw_name(self, prop);
+	jsonw_luint(self, num);
+}
+
+void jsonw_lluint_field(json_writer_t *self,
+			const char *prop,
+			unsigned long long num)
+{
+	jsonw_name(self, prop);
+	jsonw_lluint(self, num);
+}
+
+void jsonw_int_field(json_writer_t *self, const char *prop, int num)
 {
 	jsonw_name(self, prop);
 	jsonw_int(self, num);
 }
 
-#ifdef notused
+void jsonw_s64_field(json_writer_t *self, const char *prop, int64_t num)
+{
+	jsonw_name(self, prop);
+	jsonw_s64(self, num);
+}
+
 void jsonw_null_field(json_writer_t *self, const char *prop)
 {
 	jsonw_name(self, prop);
 	jsonw_null(self);
 }
-#endif
 
 #ifdef TEST
 int main(int argc, char **argv)

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * Get mdb table with netlink
  */
@@ -18,6 +19,7 @@
 #include "br_common.h"
 #include "rt_names.h"
 #include "utils.h"
+#include "json_print.h"
 
 #ifndef MDBA_RTA
 #define MDBA_RTA(r) \
@@ -38,81 +40,130 @@ static bool is_temp_mcast_rtr(__u8 type)
 	return type == MDB_RTR_TYPE_TEMP_QUERY || type == MDB_RTR_TYPE_TEMP;
 }
 
+static const char *format_timer(__u32 ticks)
+{
+	struct timeval tv;
+	static char tbuf[32];
+
+	__jiffies_to_tv(&tv, ticks);
+	snprintf(tbuf, sizeof(tbuf), "%4lu.%.2lu",
+		 (unsigned long)tv.tv_sec,
+		 (unsigned long)tv.tv_usec / 10000);
+
+	return tbuf;
+}
+
 static void __print_router_port_stats(FILE *f, struct rtattr *pattr)
 {
 	struct rtattr *tb[MDBA_ROUTER_PATTR_MAX + 1];
-	struct timeval tv;
-	__u8 type;
 
 	parse_rtattr(tb, MDBA_ROUTER_PATTR_MAX, MDB_RTR_RTA(RTA_DATA(pattr)),
 		     RTA_PAYLOAD(pattr) - RTA_ALIGN(sizeof(uint32_t)));
+
 	if (tb[MDBA_ROUTER_PATTR_TIMER]) {
-		__jiffies_to_tv(&tv,
-				rta_getattr_u32(tb[MDBA_ROUTER_PATTR_TIMER]));
-		fprintf(f, " %4i.%.2i",
-			(int)tv.tv_sec, (int)tv.tv_usec/10000);
+		__u32 timer = rta_getattr_u32(tb[MDBA_ROUTER_PATTR_TIMER]);
+
+		print_string(PRINT_ANY, "timer", " %s",
+			     format_timer(timer));
 	}
+
 	if (tb[MDBA_ROUTER_PATTR_TYPE]) {
-		type = rta_getattr_u8(tb[MDBA_ROUTER_PATTR_TYPE]);
-		fprintf(f, " %s",
-			is_temp_mcast_rtr(type) ? "temp" : "permanent");
+		__u8 type = rta_getattr_u8(tb[MDBA_ROUTER_PATTR_TYPE]);
+
+		print_string(PRINT_ANY, "type", " %s",
+			     is_temp_mcast_rtr(type) ? "temp" : "permanent");
 	}
 }
 
-static void br_print_router_ports(FILE *f, struct rtattr *attr, __u32 brifidx)
+static void br_print_router_ports(FILE *f, struct rtattr *attr,
+				  const char *brifname)
 {
-	uint32_t *port_ifindex;
+	int rem = RTA_PAYLOAD(attr);
 	struct rtattr *i;
-	int rem;
 
-	if (!show_stats)
-		fprintf(f, "router ports on %s: ", ll_index_to_name(brifidx));
+	if (is_json_context())
+		open_json_array(PRINT_JSON, brifname);
+	else if (!show_stats)
+		fprintf(f, "router ports on %s: ", brifname);
 
-	rem = RTA_PAYLOAD(attr);
 	for (i = RTA_DATA(attr); RTA_OK(i, rem); i = RTA_NEXT(i, rem)) {
-		port_ifindex = RTA_DATA(i);
-		if (show_stats) {
+		uint32_t *port_ifindex = RTA_DATA(i);
+		const char *port_ifname = ll_index_to_name(*port_ifindex);
+
+		if (is_json_context()) {
+			open_json_object(NULL);
+			print_string(PRINT_JSON, "port", NULL, port_ifname);
+
+			if (show_stats)
+				__print_router_port_stats(f, i);
+			close_json_object();
+		} else if (show_stats) {
 			fprintf(f, "router ports on %s: %s",
-				ll_index_to_name(brifidx),
-				ll_index_to_name(*port_ifindex));
+				brifname, port_ifname);
+
 			__print_router_port_stats(f, i);
 			fprintf(f, "\n");
 		} else {
-			fprintf(f, "%s ", ll_index_to_name(*port_ifindex));
+			fprintf(f, "%s ", port_ifname);
 		}
 	}
+
 	if (!show_stats)
-		fprintf(f, "\n");
+		print_nl();
+
+	close_json_array(PRINT_JSON, NULL);
 }
 
-static void print_mdb_entry(FILE *f, int ifindex, struct br_mdb_entry *e,
+static void print_mdb_entry(FILE *f, int ifindex, const struct br_mdb_entry *e,
 			    struct nlmsghdr *n, struct rtattr **tb)
 {
 	SPRINT_BUF(abuf);
+	const char *dev;
 	const void *src;
 	int af;
 
 	if (filter_vlan && e->vid != filter_vlan)
 		return;
+
 	af = e->addr.proto == htons(ETH_P_IP) ? AF_INET : AF_INET6;
 	src = af == AF_INET ? (const void *)&e->addr.u.ip4 :
 			      (const void *)&e->addr.u.ip6;
-	if (n->nlmsg_type == RTM_DELMDB)
-		fprintf(f, "Deleted ");
-	fprintf(f, "dev %s port %s grp %s %s %s", ll_index_to_name(ifindex),
-		ll_index_to_name(e->ifindex),
-		inet_ntop(af, src, abuf, sizeof(abuf)),
-		(e->state & MDB_PERMANENT) ? "permanent" : "temp",
-		(e->flags & MDB_FLAGS_OFFLOAD) ? "offload" : "");
-	if (e->vid)
-		fprintf(f, " vid %hu", e->vid);
-	if (show_stats && tb && tb[MDBA_MDB_EATTR_TIMER]) {
-		struct timeval tv;
+	dev = ll_index_to_name(ifindex);
 
-		__jiffies_to_tv(&tv, rta_getattr_u32(tb[MDBA_MDB_EATTR_TIMER]));
-		fprintf(f, "%4i.%.2i", (int)tv.tv_sec, (int)tv.tv_usec/10000);
+	open_json_object(NULL);
+
+	if (n->nlmsg_type == RTM_DELMDB)
+		print_bool(PRINT_ANY, "deleted", "Deleted ", true);
+
+	print_int(PRINT_ANY, "index", "%u: ", ifindex);
+	print_color_string(PRINT_ANY, COLOR_IFNAME, "dev", "%s ", dev);
+	print_string(PRINT_ANY, "port", " %s ",
+		     ll_index_to_name(e->ifindex));
+
+	print_color_string(PRINT_ANY, ifa_family_color(af),
+			    "grp", " %s ",
+			    inet_ntop(af, src, abuf, sizeof(abuf)));
+
+	print_string(PRINT_ANY, "state", " %s ",
+			   (e->state & MDB_PERMANENT) ? "permanent" : "temp");
+
+	open_json_array(PRINT_JSON, "flags");
+	if (e->flags & MDB_FLAGS_OFFLOAD)
+		print_string(PRINT_ANY, NULL, "%s ", "offload");
+	close_json_array(PRINT_JSON, NULL);
+
+	if (e->vid)
+		print_uint(PRINT_ANY, "vid", " vid %u", e->vid);
+
+	if (show_stats && tb && tb[MDBA_MDB_EATTR_TIMER]) {
+		__u32 timer = rta_getattr_u32(tb[MDBA_MDB_EATTR_TIMER]);
+
+		print_string(PRINT_ANY, "timer", " %s",
+			     format_timer(timer));
 	}
-	fprintf(f, "\n");
+
+	print_nl();
+	close_json_object();
 }
 
 static void br_print_mdb_entry(FILE *f, int ifindex, struct rtattr *attr,
@@ -132,15 +183,60 @@ static void br_print_mdb_entry(FILE *f, int ifindex, struct rtattr *attr,
 	}
 }
 
-int print_mdb(const struct sockaddr_nl *who, struct nlmsghdr *n, void *arg)
+static void print_mdb_entries(FILE *fp, struct nlmsghdr *n,
+			      int ifindex,  struct rtattr *mdb)
+{
+	int rem = RTA_PAYLOAD(mdb);
+	struct rtattr *i;
+
+	open_json_array(PRINT_JSON, "mdb");
+	for (i = RTA_DATA(mdb); RTA_OK(i, rem); i = RTA_NEXT(i, rem))
+		br_print_mdb_entry(fp, ifindex, i, n);
+	close_json_array(PRINT_JSON, NULL);
+}
+
+static void print_router_entries(FILE *fp, struct nlmsghdr *n,
+				 int ifindex, struct rtattr *router)
+{
+	const char *brifname = ll_index_to_name(ifindex);
+
+	open_json_array(PRINT_JSON, "router");
+	if (n->nlmsg_type == RTM_GETMDB) {
+		if (show_details)
+			br_print_router_ports(fp, router, brifname);
+	} else {
+		struct rtattr *i = RTA_DATA(router);
+		uint32_t *port_ifindex = RTA_DATA(i);
+		const char *port_name = ll_index_to_name(*port_ifindex);
+
+		if (is_json_context()) {
+			open_json_array(PRINT_JSON, brifname);
+			open_json_object(NULL);
+
+			print_string(PRINT_JSON, "port", NULL,
+				     port_name);
+			close_json_object();
+			close_json_array(PRINT_JSON, NULL);
+		} else {
+			fprintf(fp, "router port dev %s master %s\n",
+				port_name, brifname);
+		}
+	}
+	close_json_array(PRINT_JSON, NULL);
+}
+
+int print_mdb(struct nlmsghdr *n, void *arg)
 {
 	FILE *fp = arg;
 	struct br_port_msg *r = NLMSG_DATA(n);
 	int len = n->nlmsg_len;
-	struct rtattr *tb[MDBA_MAX+1], *i;
+	struct rtattr *tb[MDBA_MAX+1];
 
-	if (n->nlmsg_type != RTM_GETMDB && n->nlmsg_type != RTM_NEWMDB && n->nlmsg_type != RTM_DELMDB) {
-		fprintf(stderr, "Not RTM_GETMDB, RTM_NEWMDB or RTM_DELMDB: %08x %08x %08x\n",
+	if (n->nlmsg_type != RTM_GETMDB &&
+	    n->nlmsg_type != RTM_NEWMDB &&
+	    n->nlmsg_type != RTM_DELMDB) {
+		fprintf(stderr,
+			"Not RTM_GETMDB, RTM_NEWMDB or RTM_DELMDB: %08x %08x %08x\n",
 			n->nlmsg_len, n->nlmsg_type, n->nlmsg_flags);
 
 		return 0;
@@ -157,32 +253,14 @@ int print_mdb(const struct sockaddr_nl *who, struct nlmsghdr *n, void *arg)
 
 	parse_rtattr(tb, MDBA_MAX, MDBA_RTA(r), n->nlmsg_len - NLMSG_LENGTH(sizeof(*r)));
 
-	if (tb[MDBA_MDB]) {
-		int rem = RTA_PAYLOAD(tb[MDBA_MDB]);
+	if (n->nlmsg_type == RTM_DELMDB)
+		print_bool(PRINT_ANY, "deleted", "Deleted ", true);
 
-		for (i = RTA_DATA(tb[MDBA_MDB]); RTA_OK(i, rem); i = RTA_NEXT(i, rem))
-			br_print_mdb_entry(fp, r->ifindex, i, n);
-	}
+	if (tb[MDBA_MDB])
+		print_mdb_entries(fp, n, r->ifindex, tb[MDBA_MDB]);
 
-	if (tb[MDBA_ROUTER]) {
-		if (n->nlmsg_type == RTM_GETMDB) {
-			if (show_details)
-				br_print_router_ports(fp, tb[MDBA_ROUTER],
-						      r->ifindex);
-		} else {
-			uint32_t *port_ifindex;
-
-			i = RTA_DATA(tb[MDBA_ROUTER]);
-			port_ifindex = RTA_DATA(i);
-			if (n->nlmsg_type == RTM_DELMDB)
-				fprintf(fp, "Deleted ");
-			fprintf(fp, "router port dev %s master %s\n",
-				ll_index_to_name(*port_ifindex),
-				ll_index_to_name(r->ifindex));
-		}
-	}
-
-	fflush(fp);
+	if (tb[MDBA_ROUTER])
+		print_router_entries(fp, n, r->ifindex, tb[MDBA_ROUTER]);
 
 	return 0;
 }
@@ -207,15 +285,15 @@ static int mdb_show(int argc, char **argv)
 	}
 
 	if (filter_dev) {
-		filter_index = if_nametoindex(filter_dev);
-		if (filter_index == 0) {
-			fprintf(stderr, "Cannot find device \"%s\"\n",
-				filter_dev);
-			return -1;
-		}
+		filter_index = ll_name_to_index(filter_dev);
+		if (!filter_index)
+			return nodev(filter_dev);
 	}
 
-	if (rtnl_wilddump_request(&rth, PF_BRIDGE, RTM_GETMDB) < 0) {
+	new_json_obj(json);
+
+	/* get mdb entries*/
+	if (rtnl_mdbdump_req(&rth, PF_BRIDGE) < 0) {
 		perror("Cannot send dump request");
 		return -1;
 	}
@@ -224,6 +302,9 @@ static int mdb_show(int argc, char **argv)
 		fprintf(stderr, "Dump terminated\n");
 		return -1;
 	}
+
+	delete_json_obj();
+	fflush(stdout);
 
 	return 0;
 }
@@ -275,16 +356,12 @@ static int mdb_modify(int cmd, int flags, int argc, char **argv)
 	}
 
 	req.bpm.ifindex = ll_name_to_index(d);
-	if (req.bpm.ifindex == 0) {
-		fprintf(stderr, "Cannot find device \"%s\"\n", d);
-		return -1;
-	}
+	if (!req.bpm.ifindex)
+		return nodev(d);
 
 	entry.ifindex = ll_name_to_index(p);
-	if (entry.ifindex == 0) {
-		fprintf(stderr, "Cannot find device \"%s\"\n", p);
-		return -1;
-	}
+	if (!entry.ifindex)
+		return nodev(p);
 
 	if (!inet_pton(AF_INET, grp, &entry.addr.u.ip4)) {
 		if (!inet_pton(AF_INET6, grp, &entry.addr.u.ip6)) {
@@ -298,7 +375,7 @@ static int mdb_modify(int cmd, int flags, int argc, char **argv)
 	entry.vid = vid;
 	addattr_l(&req.n, sizeof(req), MDBA_SET_ENTRY, &entry, sizeof(entry));
 
-	if (rtnl_talk(&rth, &req.n, NULL, 0) < 0)
+	if (rtnl_talk(&rth, &req.n, NULL) < 0)
 		return -1;
 
 	return 0;

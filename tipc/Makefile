@@ -1,4 +1,8 @@
-include ../Config
+# SPDX-License-Identifier: GPL-2.0
+include ../config.mk
+
+TARGETS :=
+
 ifeq ($(HAVE_MNL),y)
 
 TIPCOBJ=bearer.o \
@@ -8,11 +12,7 @@ TIPCOBJ=bearer.o \
     node.o socket.o \
     peer.o tipc.o
 
-include ../Config
-
-TARGETS=tipc
-CFLAGS += $(shell $(PKG_CONFIG) libmnl --cflags)
-LDLIBS += $(shell $(PKG_CONFIG) libmnl --libs)
+TARGETS += tipc
 
 endif
 
@@ -22,7 +22,9 @@ tipc: $(TIPCOBJ)
 	$(QUIET_LINK)$(CC) $^ $(LDFLAGS) $(LDLIBS) -o $@
 
 install: all
-	install -m 0755 $(TARGETS) $(DESTDIR)$(SBINDIR)
+	for i in $(TARGETS); \
+	do install -m 0755 $$i $(DESTDIR)$(SBINDIR); \
+	done
 
 clean:
 	rm -f $(TIPCOBJ) $(TARGETS)

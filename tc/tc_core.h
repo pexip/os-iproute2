@@ -1,10 +1,9 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _TC_CORE_H_
 #define _TC_CORE_H_ 1
 
 #include <asm/types.h>
 #include <linux/pkt_sched.h>
-
-#define TIME_UNITS_PER_SEC	1000000
 
 enum link_layer {
 	LINKLAYER_UNSPEC,
