@@ -1,3 +1,15 @@
+iproute2 (4.20.0-2+deb10u1) buster; urgency=medium
+
+  * Backport ip-route-print-route-type-in-JSON-output.patch. Fixes bug in
+    json output, backported from upstream. (Closes: #961278)
+  * Backport tc-mqprio-json-ify-output.patch. Fixes bug in json output,
+    backported from upstream. (Closes: #972784)
+  * Backport ip-netns-use-flock-when-setting-up-run-netns.patch. Fixes
+    race condition that DOSes the system when using ip netns add at boot.
+    (Closes: #949235)
+
+ -- Luca Boccassi <bluca@debian.org>  Thu, 03 Dec 2020 18:42:49 +0000
+
 iproute2 (4.20.0-2) unstable; urgency=medium
 
   * Upload to unstable.

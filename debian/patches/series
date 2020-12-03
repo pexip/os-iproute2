@@ -1,2 +1,5 @@
 0001-Add-moo-feature.patch
 0004-sync-iptables-header.patch
+ip-route-print-route-type-in-JSON-output.patch
+tc-mqprio-json-ify-output.patch
+ip-netns-use-flock-when-setting-up-run-netns.patch
