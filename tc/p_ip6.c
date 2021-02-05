@@ -74,6 +74,21 @@ parse_ip6(int *argc_p, char ***argv_p,
 		res = parse_cmd(&argc, &argv, 1, TU32, RU8, sel, tkey);
 		goto done;
 	}
+	if (strcmp(*argv, "traffic_class") == 0) {
+		NEXT_ARG();
+		tkey->off = 1;
+		res = parse_cmd(&argc, &argv, 1, TU32, RU8, sel, tkey);
+
+		/* Shift the field by 4 bits on success. */
+		if (!res) {
+			int nkeys = sel->sel.nkeys;
+			struct tc_pedit_key *key = &sel->keys[nkeys - 1];
+
+			key->mask = htonl(ntohl(key->mask) << 4 | 0xf);
+			key->val = htonl(ntohl(key->val) << 4);
+		}
+		goto done;
+	}
 
 	return -1;
 
@@ -84,6 +99,6 @@ done:
 }
 
 struct m_pedit_util p_pedit_ip6 = {
-	.id = "ipv6",
+	.id = "ip6",
 	.parse_peopt = parse_ip6,
 };

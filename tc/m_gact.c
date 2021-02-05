@@ -53,8 +53,7 @@ explain(void)
 			"\tINDEX := index value used\n"
 			"\n");
 #else
-	fprintf(stderr, "Usage: ... gact <ACTION> [INDEX]\n");
-	fprintf(stderr,
+	fprintf(stderr, "Usage: ... gact <ACTION> [INDEX]\n"
 		"Where: \tACTION := reclassify | drop | continue | pass | pipe |\n"
 		"       \t          goto chain <CHAIN_INDEX> | jump <JUMP_COUNT>\n"
 		"\tINDEX := index value used\n"
@@ -88,7 +87,10 @@ parse_gact(struct action_util *a, int *argc_p, char ***argv_p,
 		return -1;
 
 	if (!matches(*argv, "gact"))
-		NEXT_ARG_FWD();
+		NEXT_ARG();
+	/* we're binding existing gact action to filter by index. */
+	if (!matches(*argv, "index"))
+		goto skip_args;
 	if (parse_action_control(&argc, &argv, &p.action, false))
 		usage();	/* does not return */
 
@@ -133,6 +135,7 @@ parse_gact(struct action_util *a, int *argc_p, char ***argv_p,
 
 	if (argc > 0) {
 		if (matches(*argv, "index") == 0) {
+skip_args:
 			NEXT_ARG();
 			if (get_u32(&p.index, *argv, 10)) {
 				fprintf(stderr, "Illegal \"index\"\n");
@@ -174,7 +177,7 @@ print_gact(struct action_util *au, FILE *f, struct rtattr *arg)
 	parse_rtattr_nested(tb, TCA_GACT_MAX, arg);
 
 	if (tb[TCA_GACT_PARMS] == NULL) {
-		print_string(PRINT_FP, NULL, "%s", "[NULL gact parameters]");
+		fprintf(stderr, "Missing gact parameters\n");
 		return -1;
 	}
 	p = RTA_DATA(tb[TCA_GACT_PARMS]);
@@ -190,13 +193,15 @@ print_gact(struct action_util *au, FILE *f, struct rtattr *arg)
 		pp = &pp_dummy;
 	}
 	open_json_object("prob");
-	print_string(PRINT_ANY, "random_type", "\n\t random type %s",
+	print_nl();
+	print_string(PRINT_ANY, "random_type", "\t random type %s",
 		     prob_n2a(pp->ptype));
 	print_action_control(f, " ", pp->paction, " ");
 	print_int(PRINT_ANY, "val", "val %d", pp->pval);
 	close_json_object();
 #endif
-	print_uint(PRINT_ANY, "index", "\n\t index %u", p->index);
+	print_nl();
+	print_uint(PRINT_ANY, "index", "\t index %u", p->index);
 	print_int(PRINT_ANY, "ref", " ref %d", p->refcnt);
 	print_int(PRINT_ANY, "bind", " bind %d", p->bindcnt);
 	if (show_stats) {
@@ -206,7 +211,7 @@ print_gact(struct action_util *au, FILE *f, struct rtattr *arg)
 			print_tm(f, tm);
 		}
 	}
-	print_string(PRINT_FP, NULL, "%s", "\n");
+	print_nl();
 	return 0;
 }
 

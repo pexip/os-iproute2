@@ -21,21 +21,23 @@ static void print_explain(FILE *f)
 {
 	fprintf(f,
 		"Usage: ... geneve id VNI\n"
-		"                  remote ADDR\n"
-		"                  [ ttl TTL ]\n"
-		"                  [ tos TOS ]\n"
-		"                  [ flowlabel LABEL ]\n"
-		"                  [ dstport PORT ]\n"
-		"                  [ [no]external ]\n"
-		"                  [ [no]udpcsum ]\n"
-		"                  [ [no]udp6zerocsumtx ]\n"
-		"                  [ [no]udp6zerocsumrx ]\n"
+		"		remote ADDR\n"
+		"		[ ttl TTL ]\n"
+		"		[ tos TOS ]\n"
+		"		[ df DF ]\n"
+		"		[ flowlabel LABEL ]\n"
+		"		[ dstport PORT ]\n"
+		"		[ [no]external ]\n"
+		"		[ [no]udpcsum ]\n"
+		"		[ [no]udp6zerocsumtx ]\n"
+		"		[ [no]udp6zerocsumrx ]\n"
 		"\n"
-		"Where: VNI   := 0-16777215\n"
-		"       ADDR  := IP_ADDRESS\n"
-		"       TOS   := { NUMBER | inherit }\n"
-		"       TTL   := { 1..255 | auto | inherit }\n"
-		"       LABEL := 0-1048575\n"
+		"Where:	VNI   := 0-16777215\n"
+		"	ADDR  := IP_ADDRESS\n"
+		"	TOS   := { NUMBER | inherit }\n"
+		"	TTL   := { 1..255 | auto | inherit }\n"
+		"	DF    := { unset | set | inherit }\n"
+		"	LABEL := 0-1048575\n"
 	);
 }
 
@@ -115,6 +117,22 @@ static int geneve_parse_opt(struct link_util *lu, int argc, char **argv,
 				tos = uval;
 			} else
 				tos = 1;
+		} else if (!matches(*argv, "df")) {
+			enum ifla_geneve_df df;
+
+			NEXT_ARG();
+			check_duparg(&attrs, IFLA_GENEVE_DF, "df", *argv);
+			if (strcmp(*argv, "unset") == 0)
+				df = GENEVE_DF_UNSET;
+			else if (strcmp(*argv, "set") == 0)
+				df = GENEVE_DF_SET;
+			else if (strcmp(*argv, "inherit") == 0)
+				df = GENEVE_DF_INHERIT;
+			else
+				invarg("DF must be 'unset', 'set' or 'inherit'",
+				       *argv);
+
+			addattr8(n, 1024, IFLA_GENEVE_DF, df);
 		} else if (!matches(*argv, "label") ||
 			   !matches(*argv, "flowlabel")) {
 			__u32 uval;
@@ -233,7 +251,7 @@ static void geneve_print_opt(struct link_util *lu, FILE *f, struct rtattr *tb[])
 		return;
 
 	if (tb[IFLA_GENEVE_COLLECT_METADATA]) {
-		print_bool(PRINT_ANY, "external", "external", true);
+		print_bool(PRINT_ANY, "external", "external ", true);
 		return;
 	}
 
@@ -285,6 +303,17 @@ static void geneve_print_opt(struct link_util *lu, FILE *f, struct rtattr *tb[])
 			print_0xhex(PRINT_ANY, "tos", "tos %#llx ", tos);
 		else
 			print_string(PRINT_FP, NULL, "tos %s ", "inherit");
+	}
+
+	if (tb[IFLA_GENEVE_DF]) {
+		enum ifla_geneve_df df = rta_getattr_u8(tb[IFLA_GENEVE_DF]);
+
+		if (df == GENEVE_DF_UNSET)
+			print_string(PRINT_JSON, "df", "df %s ", "unset");
+		else if (df == GENEVE_DF_SET)
+			print_string(PRINT_ANY, "df", "df %s ", "set");
+		else if (df == GENEVE_DF_INHERIT)
+			print_string(PRINT_ANY, "df", "df %s ", "inherit");
 	}
 
 	if (tb[IFLA_GENEVE_LABEL]) {

@@ -6,11 +6,6 @@
  #include "m_ematch.h"
 %}
 
-%locations
-%token-table
-%error-verbose
-%name-prefix "ematch_"
-
 %union {
 	unsigned int i;
 	struct bstr *b;

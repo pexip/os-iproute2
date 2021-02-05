@@ -91,6 +91,10 @@ TIME |
 LIMIT ]
 .br
 [
+.BR fwmark
+MASK ]
+.br
+[
 .BR ptm
 |
 .BR atm
@@ -409,9 +413,9 @@ suffered by Australasian residents.  Equivalent to
 .SH FLOW ISOLATION PARAMETERS
 With flow isolation enabled, CAKE places packets from different flows into
 different queues, each of which carries its own AQM state.  Packets from each
-queue are then delivered fairly, according to a DRR++ algorithm which minimises
+queue are then delivered fairly, according to a DRR++ algorithm which minimizes
 latency for "sparse" flows.  CAKE uses a set-associative hashing algorithm to
-minimise flow collisions.
+minimize flow collisions.
 
 These keywords specify whether fairness based on source address, destination
 address, individual flows, or any combination of those is desired.
@@ -523,6 +527,18 @@ preset on the modern Internet is firmly discouraged.
 		Best Effort (general), 100% threshold.
 .br
 		Voice (CS7, CS6, EF, VA, TOS4), 25% threshold, reduced Codel interval.
+
+.PP
+.B fwmark
+MASK
+.br
+	This options turns on fwmark-based overriding of CAKE's tin selection.
+If set, the option specifies a bitmask that will be applied to the fwmark
+associated with each packet. If the result of this masking is non-zero, the
+result will be right-shifted by the number of least-significant unset bits in
+the mask value, and the result will be used as a the tin number for that packet.
+This can be used to set policies in a firewall script that will override CAKE's
+built-in tin selection.
 
 .SH OTHER PARAMETERS
 .B memlimit

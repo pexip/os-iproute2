@@ -24,6 +24,7 @@ struct link_filter {
 	int master;
 	char *kind;
 	char *slave_kind;
+	int target_nsid;
 };
 
 int get_operstate(const char *name);
@@ -47,6 +48,7 @@ int print_prefix(struct nlmsghdr *n, void *arg);
 int print_rule(struct nlmsghdr *n, void *arg);
 int print_netconf(struct rtnl_ctrl_data *ctrl,
 		  struct nlmsghdr *n, void *arg);
+int print_nexthop(struct nlmsghdr *n, void *arg);
 void netns_map_init(void);
 void netns_nsid_socket_init(void);
 int print_nsid(struct nlmsghdr *n, void *arg);
@@ -80,12 +82,13 @@ int do_ipvrf(int argc, char **argv);
 void vrf_reset(void);
 int netns_identify_pid(const char *pidstr, char *name, int len);
 int do_seg6(int argc, char **argv);
+int do_ipnh(int argc, char **argv);
+int do_mptcp(int argc, char **argv);
 
 int iplink_get(char *name, __u32 filt_mask);
 int iplink_ifla_xstats(int argc, char **argv);
 
-int ip_linkaddr_list(int family, req_filter_fn_t filter_fn,
-		     struct nlmsg_chain *linfo, struct nlmsg_chain *ainfo);
+int ip_link_list(req_filter_fn_t filter_fn, struct nlmsg_chain *linfo);
 void free_nlmsg_chain(struct nlmsg_chain *info);
 
 static inline int rtm_get_table(struct rtmsg *r, struct rtattr **tb)
@@ -131,8 +134,12 @@ void br_dump_bridge_id(const struct ifla_bridge_id *id, char *buf, size_t len);
 int bridge_parse_xstats(struct link_util *lu, int argc, char **argv);
 int bridge_print_xstats(struct nlmsghdr *n, void *arg);
 
+int bond_parse_xstats(struct link_util *lu, int argc, char **argv);
+int bond_print_xstats(struct nlmsghdr *n, void *arg);
+
 /* iproute_lwtunnel.c */
-int lwt_parse_encap(struct rtattr *rta, size_t len, int *argcp, char ***argvp);
+int lwt_parse_encap(struct rtattr *rta, size_t len, int *argcp, char ***argvp,
+		    int encap_attr, int encap_type_attr);
 void lwt_print_encap(FILE *fp, struct rtattr *encap_type, struct rtattr *encap);
 
 /* iplink_xdp.c */
@@ -153,5 +160,8 @@ int name_is_vrf(const char *name);
 #endif
 
 void print_num(FILE *fp, unsigned int width, uint64_t count);
-
+void print_rt_flags(FILE *fp, unsigned int flags);
+void print_rta_if(FILE *fp, const struct rtattr *rta, const char *prefix);
+void print_rta_gateway(FILE *fp, unsigned char family,
+		       const struct rtattr *rta);
 #endif /* _IP_COMMON_H_ */

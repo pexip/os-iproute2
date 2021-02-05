@@ -1,14 +1,121 @@
-iproute2 (4.20.0-2+deb10u1) buster; urgency=medium
+iproute2 (5.10.0-4) unstable; urgency=medium
 
-  * Backport ip-route-print-route-type-in-JSON-output.patch. Fixes bug in
-    json output, backported from upstream. (Closes: #961278)
-  * Backport tc-mqprio-json-ify-output.patch. Fixes bug in json output,
-    backported from upstream. (Closes: #972784)
-  * Backport ip-netns-use-flock-when-setting-up-run-netns.patch. Fixes
-    race condition that DOSes the system when using ip netns add at boot.
-    (Closes: #949235)
+  * Backport 0012-iproute-force-rtm_dst_len-to-32-128.patch to fix ip
+    route get with netmask (Closes: #944730)
+  * Add d/not-installed file
+  * Bump debhelper-compat to 13
 
- -- Luca Boccassi <bluca@debian.org>  Thu, 03 Dec 2020 18:42:49 +0000
+ -- Luca Boccassi <bluca@debian.org>  Fri, 05 Feb 2021 23:34:59 +0000
+
+iproute2 (5.10.0-3) unstable; urgency=medium
+
+  * Backport patches to fix ip vrf exec (Closes: #980046)
+
+ -- Luca Boccassi <bluca@debian.org>  Sun, 17 Jan 2021 23:11:31 +0000
+
+iproute2 (5.10.0-2) unstable; urgency=medium
+
+  * Backport patches from iproute2-next to support libbpf
+  * Add build-dependency on libbpf-dev
+  * Remove duplicated lines from iproute2.lintian-overridess
+
+ -- Luca Boccassi <bluca@debian.org>  Sat, 26 Dec 2020 15:16:36 +0000
+
+iproute2 (5.10.0-1) unstable; urgency=medium
+
+  * Update upstream source from tag 'upstream/5.10.0'
+    (Closes: #972784, #949235)
+  * Bump Standards-Version to 4.5.1, no changes
+
+ -- Luca Boccassi <bluca@debian.org>  Sun, 20 Dec 2020 22:47:37 +0000
+
+iproute2 (5.9.0-1) unstable; urgency=medium
+
+  * Update upstream source from tag 'upstream/5.9.0'
+
+ -- Luca Boccassi <bluca@debian.org>  Mon, 19 Oct 2020 10:49:53 +0100
+
+iproute2 (5.8.0-1) unstable; urgency=medium
+
+  * Update upstream source from tag 'upstream/5.8.0'
+  * Refresh 0001-Add-moo-feature.patch to remove fuzz from 5.8.0
+
+ -- Luca Boccassi <bluca@debian.org>  Wed, 12 Aug 2020 13:54:32 +0100
+
+iproute2 (5.7.0-1) unstable; urgency=medium
+
+  * Update upstream source from tag 'upstream/5.7.0'
+  * Add override for Lintian false positive in iproute2-doc
+
+ -- Luca Boccassi <bluca@debian.org>  Sat, 06 Jun 2020 12:27:27 +0100
+
+iproute2 (5.6.0-1) unstable; urgency=medium
+
+  * Update upstream source from tag 'upstream/5.6.0'
+  * Set hardening=+all to enable BindNow
+  * Use https in d/watch
+  * Switch to debhelper-compat 12
+  * Fix Vc-Browser field, remove .git
+  * Minimize d/upstream/signing-key.asc
+  * Add Lintian overrides for false positives
+
+ -- Luca Boccassi <bluca@debian.org>  Fri, 03 Apr 2020 10:03:30 +0100
+
+iproute2 (5.5.0-1) unstable; urgency=medium
+
+  [ Steve Langasek ]
+  * Make autopkgtests cross-test-friendly (Closes: #949566)
+
+  [ Luca Boccassi ]
+  * Bump Standards-Version to 4.5.0, no changes.
+  * Build-depend on libxtables-dev instead of iptables-dev. (Closes:
+    #951089)
+  * Update upstream source from tag 'upstream/5.5.0'
+
+ -- Luca Boccassi <bluca@debian.org>  Tue, 11 Feb 2020 10:51:46 +0000
+
+iproute2 (5.4.0-1) unstable; urgency=medium
+
+  * Fix Lintian Warning: spelling-error-in-changelog
+  * Update upstream source from tag 'upstream/5.4.0'
+  * iproute2-doc: upstream no longer ships examples
+
+ -- Luca Boccassi <bluca@debian.org>  Thu, 28 Nov 2019 10:56:11 +0000
+
+iproute2 (5.3.0-1) unstable; urgency=medium
+
+  * Bump Standards-Version to 4.4.0, no changes.
+  * Do not ship ifstat.8 manpage, as we do not ship the binary
+  * Update upstream source from tag 'upstream/5.3.0'
+  * Refresh patches for 5.3.0
+
+ -- Luca Boccassi <bluca@debian.org>  Fri, 27 Sep 2019 12:17:59 +0100
+
+iproute2 (5.2.0-1) unstable; urgency=medium
+
+  * Use /run/netns rather than /var/run/netns. Allows one to manage namespaces
+    early at boot in case /var is on a different filesystem. (Closes:
+    #929774)
+  * Update upstream source from tag 'upstream/5.2.0'
+  * Refresh 0004-sync-iptables-header.patch, most of it has been merged
+    upstream.
+
+ -- Luca Boccassi <bluca@debian.org>  Tue, 09 Jul 2019 20:52:47 +0100
+
+iproute2 (5.1.0-1) experimental; urgency=medium
+
+  * Update upstream source from tag 'upstream/5.1.0'
+
+ -- Luca Boccassi <bluca@debian.org>  Tue, 21 May 2019 15:43:15 +0100
+
+iproute2 (5.0.0-1) experimental; urgency=medium
+
+  * Update upstream source from tag 'upstream/5.0.0'
+  * Add build flags check to Gitlab CI.
+  * Build-depend on libbsd-dev, to avoid using internal strlcpy.
+  * autopkgtest: build-depend on locales-all for manpage test
+
+ -- Luca Boccassi <bluca@debian.org>  Thu, 21 Mar 2019 12:14:41 +0000
 
 iproute2 (4.20.0-2) unstable; urgency=medium
 

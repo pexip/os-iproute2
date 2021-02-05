@@ -33,46 +33,41 @@
 static void gre_print_help(struct link_util *lu, int argc, char **argv, FILE *f)
 {
 	fprintf(f,
-		"Usage: ... %-9s [ remote ADDR ]\n",
-		lu->id
-	);
-	fprintf(f,
-		"                     [ local ADDR ]\n"
-		"                     [ [no][i|o]seq ]\n"
-		"                     [ [i|o]key KEY | no[i|o]key ]\n"
-		"                     [ [no][i|o]csum ]\n"
-		"                     [ hoplimit TTL ]\n"
-		"                     [ encaplimit ELIM ]\n"
-		"                     [ tclass TCLASS ]\n"
-		"                     [ flowlabel FLOWLABEL ]\n"
-		"                     [ dscp inherit ]\n"
-		"                     [ dev PHYS_DEV ]\n"
-		"                     [ fwmark MARK ]\n"
-		"                     [ [no]allow-localremote ]\n"
-		"                     [ external ]\n"
-		"                     [ noencap ]\n"
-		"                     [ encap { fou | gue | none } ]\n"
-		"                     [ encap-sport PORT ]\n"
-		"                     [ encap-dport PORT ]\n"
-		"                     [ [no]encap-csum ]\n"
-		"                     [ [no]encap-csum6 ]\n"
-		"                     [ [no]encap-remcsum ]\n"
-		"                     [ erspan_ver version ]\n"
-		"                     [ erspan IDX ]\n"
-		"                     [ erspan_dir { ingress | egress } ]\n"
-		"                     [ erspan_hwid hwid ]\n"
+		"Usage: ... %-9s	[ remote ADDR ]\n"
+		"			[ local ADDR ]\n"
+		"			[ [no][i|o]seq ]\n"
+		"			[ [i|o]key KEY | no[i|o]key ]\n"
+		"			[ [no][i|o]csum ]\n"
+		"			[ hoplimit TTL ]\n"
+		"			[ encaplimit ELIM ]\n"
+		"			[ tclass TCLASS ]\n"
+		"			[ flowlabel FLOWLABEL ]\n"
+		"			[ dscp inherit ]\n"
+		"			[ dev PHYS_DEV ]\n"
+		"			[ fwmark MARK ]\n"
+		"			[ [no]allow-localremote ]\n"
+		"			[ external ]\n"
+		"			[ noencap ]\n"
+		"			[ encap { fou | gue | none } ]\n"
+		"			[ encap-sport PORT ]\n"
+		"			[ encap-dport PORT ]\n"
+		"			[ [no]encap-csum ]\n"
+		"			[ [no]encap-csum6 ]\n"
+		"			[ [no]encap-remcsum ]\n"
+		"			[ erspan_ver version ]\n"
+		"			[ erspan IDX ]\n"
+		"			[ erspan_dir { ingress | egress } ]\n"
+		"			[ erspan_hwid hwid ]\n"
 		"\n"
-	);
-	fprintf(f,
-		"Where: ADDR      := IPV6_ADDRESS\n"
-		"       TTL       := { 0..255 } (default=%d)\n"
-		"       KEY       := { DOTTED_QUAD | NUMBER }\n"
-		"       ELIM      := { none | 0..255 }(default=%d)\n"
-		"       TCLASS    := { 0x0..0xff | inherit }\n"
-		"       FLOWLABEL := { 0x0..0xfffff | inherit }\n"
-		"       MARK      := { 0x0..0xffffffff | inherit }\n",
-		DEFAULT_TNL_HOP_LIMIT, IPV6_DEFAULT_TNL_ENCAP_LIMIT
-	);
+		"Where:	ADDR	  := IPV6_ADDRESS\n"
+		"	TTL	  := { 0..255 } (default=%d)\n"
+		"	KEY	  := { DOTTED_QUAD | NUMBER }\n"
+		"	ELIM	  := { none | 0..255 }(default=%d)\n"
+		"	TCLASS	  := { 0x0..0xff | inherit }\n"
+		"	FLOWLABEL := { 0x0..0xfffff | inherit }\n"
+		"	MARK	  := { 0x0..0xffffffff | inherit }\n",
+		lu->id,
+		DEFAULT_TNL_HOP_LIMIT, IPV6_DEFAULT_TNL_ENCAP_LIMIT);
 }
 
 static int gre_parse_opt(struct link_util *lu, int argc, char **argv,
@@ -111,7 +106,7 @@ static int gre_parse_opt(struct link_util *lu, int argc, char **argv,
 	__u8 metadata = 0;
 	__u32 fwmark = 0;
 	__u32 erspan_idx = 0;
-	__u8 erspan_ver = 0;
+	__u8 erspan_ver = 1;
 	__u8 erspan_dir = 0;
 	__u16 erspan_hwid = 0;
 
@@ -394,8 +389,8 @@ get_failed:
 			NEXT_ARG();
 			if (get_u8(&erspan_ver, *argv, 0))
 				invarg("invalid erspan version\n", *argv);
-			if (erspan_ver != 1 && erspan_ver != 2)
-				invarg("erspan version must be 1 or 2\n", *argv);
+			if (erspan_ver > 2)
+				invarg("erspan version must be 0/1/2\n", *argv);
 		} else if (strcmp(*argv, "erspan_dir") == 0) {
 			NEXT_ARG();
 			if (matches(*argv, "ingress") == 0)
@@ -435,7 +430,7 @@ get_failed:
 	addattr_l(n, 1024, IFLA_GRE_FLOWINFO, &flowinfo, 4);
 	addattr32(n, 1024, IFLA_GRE_FLAGS, flags);
 	addattr32(n, 1024, IFLA_GRE_FWMARK, fwmark);
-	if (erspan_ver) {
+	if (erspan_ver <= 2) {
 		addattr8(n, 1024, IFLA_GRE_ERSPAN_VER, erspan_ver);
 		if (erspan_ver == 1 && erspan_idx != 0) {
 			addattr32(n, 1024, IFLA_GRE_ERSPAN_INDEX, erspan_idx);
@@ -465,7 +460,7 @@ static void gre_print_opt(struct link_util *lu, FILE *f, struct rtattr *tb[])
 		return;
 
 	if (tb[IFLA_GRE_COLLECT_METADATA]) {
-		print_bool(PRINT_ANY, "external", "external", true);
+		print_bool(PRINT_ANY, "external", "external ", true);
 		return;
 	}
 

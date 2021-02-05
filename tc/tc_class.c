@@ -43,14 +43,15 @@ static void usage(void);
 
 static void usage(void)
 {
-	fprintf(stderr, "Usage: tc class [ add | del | change | replace | show ] dev STRING\n");
-	fprintf(stderr, "       [ classid CLASSID ] [ root | parent CLASSID ]\n");
-	fprintf(stderr, "       [ [ QDISC_KIND ] [ help | OPTIONS ] ]\n");
-	fprintf(stderr, "\n");
-	fprintf(stderr, "       tc class show [ dev STRING ] [ root | parent CLASSID ]\n");
-	fprintf(stderr, "Where:\n");
-	fprintf(stderr, "QDISC_KIND := { prio | cbq | etc. }\n");
-	fprintf(stderr, "OPTIONS := ... try tc class add <desired QDISC_KIND> help\n");
+	fprintf(stderr,
+		"Usage: tc class [ add | del | change | replace | show ] dev STRING\n"
+		"       [ classid CLASSID ] [ root | parent CLASSID ]\n"
+		"       [ [ QDISC_KIND ] [ help | OPTIONS ] ]\n"
+		"\n"
+		"       tc class show [ dev STRING ] [ root | parent CLASSID ]\n"
+		"Where:\n"
+		"QDISC_KIND := { prio | cbq | etc. }\n"
+		"OPTIONS := ... try tc class add <desired QDISC_KIND> help\n");
 }
 
 static int tc_class_modify(int cmd, unsigned int flags, int argc, char **argv)
@@ -245,8 +246,8 @@ static void graph_cls_show(FILE *fp, char *buf, struct hlist_head *root_list,
 			 "+---(%s)", cls_id_str);
 		strcat(buf, str);
 
-		parse_rtattr(tb, TCA_MAX, (struct rtattr *)cls->data,
-				cls->data_len);
+		parse_rtattr_flags(tb, TCA_MAX, (struct rtattr *)cls->data,
+				   cls->data_len, NLA_F_NESTED);
 
 		if (tb[TCA_KIND] == NULL) {
 			strcat(buf, " [unknown qdisc kind] ");
@@ -326,7 +327,7 @@ int print_class(struct nlmsghdr *n, void *arg)
 	if (filter_classid && t->tcm_handle != filter_classid)
 		return 0;
 
-	parse_rtattr(tb, TCA_MAX, TCA_RTA(t), len);
+	parse_rtattr_flags(tb, TCA_MAX, TCA_RTA(t), len, NLA_F_NESTED);
 
 	if (tb[TCA_KIND] == NULL) {
 		fprintf(stderr, "print_class: NULL kind\n");

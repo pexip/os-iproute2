@@ -71,20 +71,21 @@ static struct cake_preset *find_preset(char *argv)
 static void explain(void)
 {
 	fprintf(stderr,
-"Usage: ... cake [ bandwidth RATE | unlimited* | autorate-ingress ]\n"
-"                [ rtt TIME | datacentre | lan | metro | regional |\n"
-"                  internet* | oceanic | satellite | interplanetary ]\n"
-"                [ besteffort | diffserv8 | diffserv4 | diffserv3* ]\n"
-"                [ flowblind | srchost | dsthost | hosts | flows |\n"
-"                  dual-srchost | dual-dsthost | triple-isolate* ]\n"
-"                [ nat | nonat* ]\n"
-"                [ wash | nowash* ]\n"
-"                [ split-gso* | no-split-gso ]\n"
-"                [ ack-filter | ack-filter-aggressive | no-ack-filter* ]\n"
-"                [ memlimit LIMIT ]\n"
-"                [ ptm | atm | noatm* ] [ overhead N | conservative | raw* ]\n"
-"                [ mpu N ] [ ingress | egress* ]\n"
-"                (* marks defaults)\n");
+		"Usage: ... cake [ bandwidth RATE | unlimited* | autorate-ingress ]\n"
+		"                [ rtt TIME | datacentre | lan | metro | regional |\n"
+		"                  internet* | oceanic | satellite | interplanetary ]\n"
+		"                [ besteffort | diffserv8 | diffserv4 | diffserv3* ]\n"
+		"                [ flowblind | srchost | dsthost | hosts | flows |\n"
+		"                  dual-srchost | dual-dsthost | triple-isolate* ]\n"
+		"                [ nat | nonat* ]\n"
+		"                [ wash | nowash* ]\n"
+		"                [ split-gso* | no-split-gso ]\n"
+		"                [ ack-filter | ack-filter-aggressive | no-ack-filter* ]\n"
+		"                [ memlimit LIMIT ]\n"
+		"                [ fwmark MASK ]\n"
+		"                [ ptm | atm | noatm* ] [ overhead N | conservative | raw* ]\n"
+		"                [ mpu N ] [ ingress | egress* ]\n"
+		"                (* marks defaults)\n");
 }
 
 static int cake_parse_opt(struct qdisc_util *qu, int argc, char **argv,
@@ -96,6 +97,7 @@ static int cake_parse_opt(struct qdisc_util *qu, int argc, char **argv,
 	unsigned int interval = 0;
 	unsigned int diffserv = 0;
 	unsigned int memlimit = 0;
+	unsigned int fwmark = 0;
 	unsigned int target = 0;
 	__u64 bandwidth = 0;
 	int ack_filter = -1;
@@ -332,6 +334,13 @@ static int cake_parse_opt(struct qdisc_util *qu, int argc, char **argv,
 					"Illegal value for \"memlimit\": \"%s\"\n", *argv);
 				return -1;
 			}
+		} else if (strcmp(*argv, "fwmark") == 0) {
+			NEXT_ARG();
+			if (get_u32(&fwmark, *argv, 0)) {
+				fprintf(stderr,
+					"Illegal value for \"fwmark\": \"%s\"\n", *argv);
+				return -1;
+			}
 		} else if (strcmp(*argv, "help") == 0) {
 			explain();
 			return -1;
@@ -376,6 +385,9 @@ static int cake_parse_opt(struct qdisc_util *qu, int argc, char **argv,
 	if (memlimit)
 		addattr_l(n, 1024, TCA_CAKE_MEMORY, &memlimit,
 			  sizeof(memlimit));
+	if (fwmark)
+		addattr_l(n, 1024, TCA_CAKE_FWMARK, &fwmark,
+			  sizeof(fwmark));
 	if (nat != -1)
 		addattr_l(n, 1024, TCA_CAKE_NAT, &nat, sizeof(nat));
 	if (wash != -1)
@@ -409,6 +421,7 @@ static int cake_print_opt(struct qdisc_util *qu, FILE *f, struct rtattr *opt)
 	struct rtattr *tb[TCA_CAKE_MAX + 1];
 	unsigned int interval = 0;
 	unsigned int memlimit = 0;
+	unsigned int fwmark = 0;
 	__u64 bandwidth = 0;
 	int ack_filter = 0;
 	int split_gso = 0;
@@ -507,6 +520,14 @@ static int cake_print_opt(struct qdisc_util *qu, FILE *f, struct rtattr *opt)
 	    RTA_PAYLOAD(tb[TCA_CAKE_RTT]) >= sizeof(__u32)) {
 		interval = rta_getattr_u32(tb[TCA_CAKE_RTT]);
 	}
+	if (tb[TCA_CAKE_MEMORY] &&
+		RTA_PAYLOAD(tb[TCA_CAKE_MEMORY]) >= sizeof(__u32)) {
+		memlimit = rta_getattr_u32(tb[TCA_CAKE_MEMORY]);
+	}
+	if (tb[TCA_CAKE_FWMARK] &&
+	    RTA_PAYLOAD(tb[TCA_CAKE_FWMARK]) >= sizeof(__u32)) {
+		fwmark = rta_getattr_u32(tb[TCA_CAKE_FWMARK]);
+	}
 
 	if (wash)
 		print_string(PRINT_FP, NULL, "wash ", NULL);
@@ -555,9 +576,13 @@ static int cake_print_opt(struct qdisc_util *qu, FILE *f, struct rtattr *opt)
 
 	if (memlimit) {
 		print_uint(PRINT_JSON, "memlimit", NULL, memlimit);
-		print_string(PRINT_FP, NULL, "memlimit %s",
+		print_string(PRINT_FP, NULL, "memlimit %s ",
 			     sprint_size(memlimit, b1));
 	}
+
+	if (fwmark)
+		print_uint(PRINT_FP, NULL, "fwmark 0x%x ", fwmark);
+	print_0xhex(PRINT_JSON, "fwmark", NULL, fwmark);
 
 	return 0;
 }
@@ -742,7 +767,7 @@ static int cake_print_xstats(struct qdisc_util *qu, FILE *f,
 			fprintf(f, "          ");
 			for (i = 0; i < num_tins; i++)
 				fprintf(f, "        Tin %u", i);
-			fprintf(f, "\n");
+			fprintf(f, "%s", _SL_);
 		};
 
 #define GET_TSTAT(i, attr) (tstat[i][TCA_CAKE_TIN_STATS_ ## attr])
@@ -751,7 +776,7 @@ static int cake_print_xstats(struct qdisc_util *qu, FILE *f,
 				fprintf(f, name);		\
 				for (i = 0; i < num_tins; i++)	\
 					fprintf(f, " %12" fmts,	val);	\
-				fprintf(f, "\n");			\
+				fprintf(f, "%s", _SL_);			\
 			}						\
 		} while (0)
 
