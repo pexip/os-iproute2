@@ -23,7 +23,7 @@ Build-Depends: bison,
                pkg-config,
                po-debconf,
                zlib1g-dev,
-XS-Pexip-Upstream: http://ftp.debian.org/debian/ buster
+XS-Pexip-Upstream: http://deb.debian.org/debian/ bullseye
 
 Package: iproute2
 Priority: important
