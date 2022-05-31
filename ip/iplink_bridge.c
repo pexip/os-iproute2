@@ -29,38 +29,39 @@ static void print_explain(FILE *f)
 {
 	fprintf(f,
 		"Usage: ... bridge [ fdb_flush ]\n"
-		"                  [ forward_delay FORWARD_DELAY ]\n"
-		"                  [ hello_time HELLO_TIME ]\n"
-		"                  [ max_age MAX_AGE ]\n"
-		"                  [ ageing_time AGEING_TIME ]\n"
-		"                  [ stp_state STP_STATE ]\n"
-		"                  [ priority PRIORITY ]\n"
-		"                  [ group_fwd_mask MASK ]\n"
-		"                  [ group_address ADDRESS ]\n"
-		"                  [ vlan_filtering VLAN_FILTERING ]\n"
-		"                  [ vlan_protocol VLAN_PROTOCOL ]\n"
-		"                  [ vlan_default_pvid VLAN_DEFAULT_PVID ]\n"
-		"                  [ vlan_stats_enabled VLAN_STATS_ENABLED ]\n"
-		"                  [ mcast_snooping MULTICAST_SNOOPING ]\n"
-		"                  [ mcast_router MULTICAST_ROUTER ]\n"
-		"                  [ mcast_query_use_ifaddr MCAST_QUERY_USE_IFADDR ]\n"
-		"                  [ mcast_querier MULTICAST_QUERIER ]\n"
-		"                  [ mcast_hash_elasticity HASH_ELASTICITY ]\n"
-		"                  [ mcast_hash_max HASH_MAX ]\n"
-		"                  [ mcast_last_member_count LAST_MEMBER_COUNT ]\n"
-		"                  [ mcast_startup_query_count STARTUP_QUERY_COUNT ]\n"
-		"                  [ mcast_last_member_interval LAST_MEMBER_INTERVAL ]\n"
-		"                  [ mcast_membership_interval MEMBERSHIP_INTERVAL ]\n"
-		"                  [ mcast_querier_interval QUERIER_INTERVAL ]\n"
-		"                  [ mcast_query_interval QUERY_INTERVAL ]\n"
-		"                  [ mcast_query_response_interval QUERY_RESPONSE_INTERVAL ]\n"
-		"                  [ mcast_startup_query_interval STARTUP_QUERY_INTERVAL ]\n"
-		"                  [ mcast_stats_enabled MCAST_STATS_ENABLED ]\n"
-		"                  [ mcast_igmp_version IGMP_VERSION ]\n"
-		"                  [ mcast_mld_version MLD_VERSION ]\n"
-		"                  [ nf_call_iptables NF_CALL_IPTABLES ]\n"
-		"                  [ nf_call_ip6tables NF_CALL_IP6TABLES ]\n"
-		"                  [ nf_call_arptables NF_CALL_ARPTABLES ]\n"
+		"		  [ forward_delay FORWARD_DELAY ]\n"
+		"		  [ hello_time HELLO_TIME ]\n"
+		"		  [ max_age MAX_AGE ]\n"
+		"		  [ ageing_time AGEING_TIME ]\n"
+		"		  [ stp_state STP_STATE ]\n"
+		"		  [ priority PRIORITY ]\n"
+		"		  [ group_fwd_mask MASK ]\n"
+		"		  [ group_address ADDRESS ]\n"
+		"		  [ vlan_filtering VLAN_FILTERING ]\n"
+		"		  [ vlan_protocol VLAN_PROTOCOL ]\n"
+		"		  [ vlan_default_pvid VLAN_DEFAULT_PVID ]\n"
+		"		  [ vlan_stats_enabled VLAN_STATS_ENABLED ]\n"
+		"		  [ vlan_stats_per_port VLAN_STATS_PER_PORT ]\n"
+		"		  [ mcast_snooping MULTICAST_SNOOPING ]\n"
+		"		  [ mcast_router MULTICAST_ROUTER ]\n"
+		"		  [ mcast_query_use_ifaddr MCAST_QUERY_USE_IFADDR ]\n"
+		"		  [ mcast_querier MULTICAST_QUERIER ]\n"
+		"		  [ mcast_hash_elasticity HASH_ELASTICITY ]\n"
+		"		  [ mcast_hash_max HASH_MAX ]\n"
+		"		  [ mcast_last_member_count LAST_MEMBER_COUNT ]\n"
+		"		  [ mcast_startup_query_count STARTUP_QUERY_COUNT ]\n"
+		"		  [ mcast_last_member_interval LAST_MEMBER_INTERVAL ]\n"
+		"		  [ mcast_membership_interval MEMBERSHIP_INTERVAL ]\n"
+		"		  [ mcast_querier_interval QUERIER_INTERVAL ]\n"
+		"		  [ mcast_query_interval QUERY_INTERVAL ]\n"
+		"		  [ mcast_query_response_interval QUERY_RESPONSE_INTERVAL ]\n"
+		"		  [ mcast_startup_query_interval STARTUP_QUERY_INTERVAL ]\n"
+		"		  [ mcast_stats_enabled MCAST_STATS_ENABLED ]\n"
+		"		  [ mcast_igmp_version IGMP_VERSION ]\n"
+		"		  [ mcast_mld_version MLD_VERSION ]\n"
+		"		  [ nf_call_iptables NF_CALL_IPTABLES ]\n"
+		"		  [ nf_call_ip6tables NF_CALL_IP6TABLES ]\n"
+		"		  [ nf_call_arptables NF_CALL_ARPTABLES ]\n"
 		"\n"
 		"Where: VLAN_PROTOCOL := { 802.1Q | 802.1ad }\n"
 	);
@@ -73,7 +74,7 @@ static void explain(void)
 
 void br_dump_bridge_id(const struct ifla_bridge_id *id, char *buf, size_t len)
 {
-	char eaddr[32];
+	char eaddr[18];
 
 	ether_ntoa_r((const struct ether_addr *)id->addr, eaddr);
 	snprintf(buf, len, "%.2x%.2x.%s", id->prio[0], id->prio[1], eaddr);
@@ -175,6 +176,14 @@ static int bridge_parse_opt(struct link_util *lu, int argc, char **argv,
 				invarg("invalid vlan_stats_enabled", *argv);
 			addattr8(n, 1024, IFLA_BR_VLAN_STATS_ENABLED,
 				  vlan_stats_enabled);
+		} else if (matches(*argv, "vlan_stats_per_port") == 0) {
+			__u8 vlan_stats_per_port;
+
+			NEXT_ARG();
+			if (get_u8(&vlan_stats_per_port, *argv, 0))
+				invarg("invalid vlan_stats_per_port", *argv);
+			addattr8(n, 1024, IFLA_BR_VLAN_STATS_PER_PORT,
+				 vlan_stats_per_port);
 		} else if (matches(*argv, "mcast_router") == 0) {
 			__u8 mcast_router;
 
@@ -521,6 +530,12 @@ static void bridge_print_opt(struct link_util *lu, FILE *f, struct rtattr *tb[])
 			   "vlan_stats_enabled %u ",
 			   rta_getattr_u8(tb[IFLA_BR_VLAN_STATS_ENABLED]));
 
+	if (tb[IFLA_BR_VLAN_STATS_PER_PORT])
+		print_uint(PRINT_ANY,
+			   "vlan_stats_per_port",
+			   "vlan_stats_per_port %u ",
+			   rta_getattr_u8(tb[IFLA_BR_VLAN_STATS_PER_PORT]));
+
 	if (tb[IFLA_BR_GROUP_FWD_MASK])
 		print_0xhex(PRINT_ANY,
 			    "group_fwd_mask",
@@ -670,9 +685,10 @@ static void bridge_print_xstats_help(struct link_util *lu, FILE *f)
 	fprintf(f, "Usage: ... %s [ igmp ] [ dev DEVICE ]\n", lu->id);
 }
 
-static void bridge_print_stats_attr(FILE *f, struct rtattr *attr, int ifindex)
+static void bridge_print_stats_attr(struct rtattr *attr, int ifindex)
 {
 	struct rtattr *brtb[LINK_XSTATS_TYPE_MAX+1];
+	struct bridge_stp_xstats *sstats;
 	struct br_mcast_stats *mstats;
 	struct rtattr *i, *list;
 	const char *ifname = "";
@@ -685,76 +701,139 @@ static void bridge_print_stats_attr(FILE *f, struct rtattr *attr, int ifindex)
 
 	list = brtb[LINK_XSTATS_TYPE_BRIDGE];
 	rem = RTA_PAYLOAD(list);
+	open_json_object(NULL);
+	ifname = ll_index_to_name(ifindex);
+	print_string(PRINT_ANY, "ifname", "%-16s\n", ifname);
 	for (i = RTA_DATA(list); RTA_OK(i, rem); i = RTA_NEXT(i, rem)) {
 		if (xstats_print_attr && i->rta_type != xstats_print_attr)
 			continue;
 		switch (i->rta_type) {
 		case BRIDGE_XSTATS_MCAST:
 			mstats = RTA_DATA(i);
-			ifname = ll_index_to_name(ifindex);
-			fprintf(f, "%-16s\n", ifname);
-			fprintf(f, "%-16s    IGMP queries:\n", "");
-			fprintf(f, "%-16s      RX: v1 %llu v2 %llu v3 %llu\n",
-				"",
-				mstats->igmp_v1queries[BR_MCAST_DIR_RX],
-				mstats->igmp_v2queries[BR_MCAST_DIR_RX],
-				mstats->igmp_v3queries[BR_MCAST_DIR_RX]);
-			fprintf(f, "%-16s      TX: v1 %llu v2 %llu v3 %llu\n",
-				"",
-				mstats->igmp_v1queries[BR_MCAST_DIR_TX],
-				mstats->igmp_v2queries[BR_MCAST_DIR_TX],
-				mstats->igmp_v3queries[BR_MCAST_DIR_TX]);
+			open_json_object("multicast");
+			open_json_object("igmp_queries");
+			print_string(PRINT_FP, NULL,
+				     "%-16s    IGMP queries:\n", "");
+			print_string(PRINT_FP, NULL, "%-16s      ", "");
+			print_u64(PRINT_ANY, "rx_v1", "RX: v1 %llu ",
+				  mstats->igmp_v1queries[BR_MCAST_DIR_RX]);
+			print_u64(PRINT_ANY, "rx_v2", "v2 %llu ",
+				  mstats->igmp_v2queries[BR_MCAST_DIR_RX]);
+			print_u64(PRINT_ANY, "rx_v3", "v3 %llu\n",
+				  mstats->igmp_v3queries[BR_MCAST_DIR_RX]);
+			print_string(PRINT_FP, NULL, "%-16s      ", "");
+			print_u64(PRINT_ANY, "tx_v1", "TX: v1 %llu ",
+				  mstats->igmp_v1queries[BR_MCAST_DIR_TX]);
+			print_u64(PRINT_ANY, "tx_v2", "v2 %llu ",
+				  mstats->igmp_v2queries[BR_MCAST_DIR_TX]);
+			print_u64(PRINT_ANY, "tx_v3", "v3 %llu\n",
+				  mstats->igmp_v3queries[BR_MCAST_DIR_TX]);
+			close_json_object();
 
-			fprintf(f, "%-16s    IGMP reports:\n", "");
-			fprintf(f, "%-16s      RX: v1 %llu v2 %llu v3 %llu\n",
-				"",
-				mstats->igmp_v1reports[BR_MCAST_DIR_RX],
-				mstats->igmp_v2reports[BR_MCAST_DIR_RX],
-				mstats->igmp_v3reports[BR_MCAST_DIR_RX]);
-			fprintf(f, "%-16s      TX: v1 %llu v2 %llu v3 %llu\n",
-				"",
-				mstats->igmp_v1reports[BR_MCAST_DIR_TX],
-				mstats->igmp_v2reports[BR_MCAST_DIR_TX],
-				mstats->igmp_v3reports[BR_MCAST_DIR_TX]);
+			open_json_object("igmp_reports");
+			print_string(PRINT_FP, NULL,
+				     "%-16s    IGMP reports:\n", "");
+			print_string(PRINT_FP, NULL, "%-16s      ", "");
+			print_u64(PRINT_ANY, "rx_v1", "RX: v1 %llu ",
+				  mstats->igmp_v1reports[BR_MCAST_DIR_RX]);
+			print_u64(PRINT_ANY, "rx_v2", "v2 %llu ",
+				  mstats->igmp_v2reports[BR_MCAST_DIR_RX]);
+			print_u64(PRINT_ANY, "rx_v3", "v3 %llu\n",
+				  mstats->igmp_v3reports[BR_MCAST_DIR_RX]);
+			print_string(PRINT_FP, NULL, "%-16s      ", "");
+			print_u64(PRINT_ANY, "tx_v1", "TX: v1 %llu ",
+				  mstats->igmp_v1reports[BR_MCAST_DIR_TX]);
+			print_u64(PRINT_ANY, "tx_v2", "v2 %llu ",
+				  mstats->igmp_v2reports[BR_MCAST_DIR_TX]);
+			print_u64(PRINT_ANY, "tx_v3", "v3 %llu\n",
+				  mstats->igmp_v3reports[BR_MCAST_DIR_TX]);
+			close_json_object();
 
-			fprintf(f, "%-16s    IGMP leaves: RX: %llu TX: %llu\n",
-				"",
-				mstats->igmp_leaves[BR_MCAST_DIR_RX],
-				mstats->igmp_leaves[BR_MCAST_DIR_TX]);
+			open_json_object("igmp_leaves");
+			print_string(PRINT_FP, NULL,
+				     "%-16s    IGMP leaves: ", "");
+			print_u64(PRINT_ANY, "rx", "RX: %llu ",
+				  mstats->igmp_leaves[BR_MCAST_DIR_RX]);
+			print_u64(PRINT_ANY, "tx", "TX: %llu\n",
+				  mstats->igmp_leaves[BR_MCAST_DIR_TX]);
+			close_json_object();
 
-			fprintf(f, "%-16s    IGMP parse errors: %llu\n",
-				"", mstats->igmp_parse_errors);
+			print_string(PRINT_FP, NULL,
+				     "%-16s    IGMP parse errors: ", "");
+			print_u64(PRINT_ANY, "igmp_parse_errors", "%llu\n",
+				  mstats->igmp_parse_errors);
 
-			fprintf(f, "%-16s    MLD queries:\n", "");
-			fprintf(f, "%-16s      RX: v1 %llu v2 %llu\n",
-				"",
-				mstats->mld_v1queries[BR_MCAST_DIR_RX],
-				mstats->mld_v2queries[BR_MCAST_DIR_RX]);
-			fprintf(f, "%-16s      TX: v1 %llu v2 %llu\n",
-				"",
-				mstats->mld_v1queries[BR_MCAST_DIR_TX],
-				mstats->mld_v2queries[BR_MCAST_DIR_TX]);
+			open_json_object("mld_queries");
+			print_string(PRINT_FP, NULL,
+				     "%-16s    MLD queries:\n", "");
+			print_string(PRINT_FP, NULL, "%-16s      ", "");
+			print_u64(PRINT_ANY, "rx_v1", "RX: v1 %llu ",
+				  mstats->mld_v1queries[BR_MCAST_DIR_RX]);
+			print_u64(PRINT_ANY, "rx_v2", "v2 %llu\n",
+				  mstats->mld_v2queries[BR_MCAST_DIR_RX]);
+			print_string(PRINT_FP, NULL, "%-16s      ", "");
+			print_u64(PRINT_ANY, "tx_v1", "TX: v1 %llu ",
+				  mstats->mld_v1queries[BR_MCAST_DIR_TX]);
+			print_u64(PRINT_ANY, "tx_v2", "v2 %llu\n",
+				  mstats->mld_v2queries[BR_MCAST_DIR_TX]);
+			close_json_object();
 
-			fprintf(f, "%-16s    MLD reports:\n", "");
-			fprintf(f, "%-16s      RX: v1 %llu v2 %llu\n",
-				"",
-				mstats->mld_v1reports[BR_MCAST_DIR_RX],
-				mstats->mld_v2reports[BR_MCAST_DIR_RX]);
-			fprintf(f, "%-16s      TX: v1 %llu v2 %llu\n",
-				"",
-				mstats->mld_v1reports[BR_MCAST_DIR_TX],
-				mstats->mld_v2reports[BR_MCAST_DIR_TX]);
+			open_json_object("mld_reports");
+			print_string(PRINT_FP, NULL,
+				     "%-16s    MLD reports:\n", "");
+			print_string(PRINT_FP, NULL, "%-16s      ", "");
+			print_u64(PRINT_ANY, "rx_v1", "RX: v1 %llu ",
+				  mstats->mld_v1reports[BR_MCAST_DIR_RX]);
+			print_u64(PRINT_ANY, "rx_v2", "v2 %llu\n",
+				  mstats->mld_v2reports[BR_MCAST_DIR_RX]);
+			print_string(PRINT_FP, NULL, "%-16s      ", "");
+			print_u64(PRINT_ANY, "tx_v1", "TX: v1 %llu ",
+				  mstats->mld_v1reports[BR_MCAST_DIR_TX]);
+			print_u64(PRINT_ANY, "tx_v2", "v2 %llu\n",
+				  mstats->mld_v2reports[BR_MCAST_DIR_TX]);
+			close_json_object();
 
-			fprintf(f, "%-16s    MLD leaves: RX: %llu TX: %llu\n",
-				"",
-				mstats->mld_leaves[BR_MCAST_DIR_RX],
-				mstats->mld_leaves[BR_MCAST_DIR_TX]);
+			open_json_object("mld_leaves");
+			print_string(PRINT_FP, NULL,
+				     "%-16s    MLD leaves: ", "");
+			print_u64(PRINT_ANY, "rx", "RX: %llu ",
+				  mstats->mld_leaves[BR_MCAST_DIR_RX]);
+			print_u64(PRINT_ANY, "tx", "TX: %llu\n",
+				  mstats->mld_leaves[BR_MCAST_DIR_TX]);
+			close_json_object();
 
-			fprintf(f, "%-16s    MLD parse errors: %llu\n",
-				"", mstats->mld_parse_errors);
+			print_string(PRINT_FP, NULL,
+				     "%-16s    MLD parse errors: ", "");
+			print_u64(PRINT_ANY, "mld_parse_errors", "%llu\n",
+				  mstats->mld_parse_errors);
+			close_json_object();
+			break;
+		case BRIDGE_XSTATS_STP:
+			sstats = RTA_DATA(i);
+			open_json_object("stp");
+			print_string(PRINT_FP, NULL,
+				     "%-16s    STP BPDU:  ", "");
+			print_u64(PRINT_ANY, "rx_bpdu", "RX: %llu ",
+				  sstats->rx_bpdu);
+			print_u64(PRINT_ANY, "tx_bpdu", "TX: %llu\n",
+				  sstats->tx_bpdu);
+			print_string(PRINT_FP, NULL,
+				     "%-16s    STP TCN:   ", "");
+			print_u64(PRINT_ANY, "rx_tcn", "RX: %llu ",
+				  sstats->rx_tcn);
+			print_u64(PRINT_ANY, "tx_tcn", "TX: %llu\n",
+				  sstats->tx_tcn);
+			print_string(PRINT_FP, NULL,
+				     "%-16s    STP Transitions: ", "");
+			print_u64(PRINT_ANY, "transition_blk", "Blocked: %llu ",
+				  sstats->transition_blk);
+			print_u64(PRINT_ANY, "transition_fwd", "Forwarding: %llu\n",
+				  sstats->transition_fwd);
+			close_json_object();
 			break;
 		}
 	}
+	close_json_object();
 }
 
 int bridge_print_xstats(struct nlmsghdr *n, void *arg)
@@ -762,7 +841,6 @@ int bridge_print_xstats(struct nlmsghdr *n, void *arg)
 	struct if_stats_msg *ifsm = NLMSG_DATA(n);
 	struct rtattr *tb[IFLA_STATS_MAX+1];
 	int len = n->nlmsg_len;
-	FILE *fp = arg;
 
 	len -= NLMSG_LENGTH(sizeof(*ifsm));
 	if (len < 0) {
@@ -774,11 +852,11 @@ int bridge_print_xstats(struct nlmsghdr *n, void *arg)
 
 	parse_rtattr(tb, IFLA_STATS_MAX, IFLA_STATS_RTA(ifsm), len);
 	if (tb[IFLA_STATS_LINK_XSTATS])
-		bridge_print_stats_attr(fp, tb[IFLA_STATS_LINK_XSTATS],
+		bridge_print_stats_attr(tb[IFLA_STATS_LINK_XSTATS],
 					ifsm->ifindex);
 
 	if (tb[IFLA_STATS_LINK_XSTATS_SLAVE])
-		bridge_print_stats_attr(fp, tb[IFLA_STATS_LINK_XSTATS_SLAVE],
+		bridge_print_stats_attr(tb[IFLA_STATS_LINK_XSTATS_SLAVE],
 					ifsm->ifindex);
 
 	return 0;
@@ -789,6 +867,8 @@ int bridge_parse_xstats(struct link_util *lu, int argc, char **argv)
 	while (argc > 0) {
 		if (strcmp(*argv, "igmp") == 0 || strcmp(*argv, "mcast") == 0) {
 			xstats_print_attr = BRIDGE_XSTATS_MCAST;
+		} else if (strcmp(*argv, "stp") == 0) {
+			xstats_print_attr = BRIDGE_XSTATS_STP;
 		} else if (strcmp(*argv, "dev") == 0) {
 			NEXT_ARG();
 			filter_index = ll_name_to_index(*argv);

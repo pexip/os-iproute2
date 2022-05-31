@@ -54,63 +54,66 @@ static void usage(void) __attribute__((noreturn));
 
 static void usage(void)
 {
-	fprintf(stderr, "Usage: ip xfrm state { add | update } ID [ ALGO-LIST ] [ mode MODE ]\n");
-	fprintf(stderr, "        [ mark MARK [ mask MASK ] ] [ reqid REQID ] [ seq SEQ ]\n");
-	fprintf(stderr, "        [ replay-window SIZE ] [ replay-seq SEQ ] [ replay-oseq SEQ ]\n");
-	fprintf(stderr, "        [ replay-seq-hi SEQ ] [ replay-oseq-hi SEQ ]\n");
-	fprintf(stderr, "        [ flag FLAG-LIST ] [ sel SELECTOR ] [ LIMIT-LIST ] [ encap ENCAP ]\n");
-	fprintf(stderr, "        [ coa ADDR[/PLEN] ] [ ctx CTX ] [ extra-flag EXTRA-FLAG-LIST ]\n");
-	fprintf(stderr, "        [ offload [dev DEV] dir DIR ]\n");
-	fprintf(stderr, "        [ output-mark OUTPUT-MARK ]\n");
-	fprintf(stderr, "Usage: ip xfrm state allocspi ID [ mode MODE ] [ mark MARK [ mask MASK ] ]\n");
-	fprintf(stderr, "        [ reqid REQID ] [ seq SEQ ] [ min SPI max SPI ]\n");
-	fprintf(stderr, "Usage: ip xfrm state { delete | get } ID [ mark MARK [ mask MASK ] ]\n");
-	fprintf(stderr, "Usage: ip xfrm state { deleteall | list } [ ID ] [ mode MODE ] [ reqid REQID ]\n");
-	fprintf(stderr, "        [ flag FLAG-LIST ]\n");
-	fprintf(stderr, "Usage: ip xfrm state flush [ proto XFRM-PROTO ]\n");
-	fprintf(stderr, "Usage: ip xfrm state count\n");
-	fprintf(stderr, "ID := [ src ADDR ] [ dst ADDR ] [ proto XFRM-PROTO ] [ spi SPI ]\n");
-	fprintf(stderr, "XFRM-PROTO := ");
-	fprintf(stderr, "%s | ", strxf_xfrmproto(IPPROTO_ESP));
-	fprintf(stderr, "%s | ", strxf_xfrmproto(IPPROTO_AH));
-	fprintf(stderr, "%s | ", strxf_xfrmproto(IPPROTO_COMP));
-	fprintf(stderr, "%s | ", strxf_xfrmproto(IPPROTO_ROUTING));
-	fprintf(stderr, "%s\n", strxf_xfrmproto(IPPROTO_DSTOPTS));
-	fprintf(stderr, "ALGO-LIST := [ ALGO-LIST ] ALGO\n");
-	fprintf(stderr, "ALGO := { ");
-	fprintf(stderr, "%s | ", strxf_algotype(XFRMA_ALG_CRYPT));
-	fprintf(stderr, "%s", strxf_algotype(XFRMA_ALG_AUTH));
-	fprintf(stderr, " } ALGO-NAME ALGO-KEYMAT |\n");
-	fprintf(stderr, "        %s", strxf_algotype(XFRMA_ALG_AUTH_TRUNC));
-	fprintf(stderr, " ALGO-NAME ALGO-KEYMAT ALGO-TRUNC-LEN |\n");
-	fprintf(stderr, "        %s", strxf_algotype(XFRMA_ALG_AEAD));
-	fprintf(stderr, " ALGO-NAME ALGO-KEYMAT ALGO-ICV-LEN |\n");
-	fprintf(stderr, "        %s", strxf_algotype(XFRMA_ALG_COMP));
-	fprintf(stderr, " ALGO-NAME\n");
-	fprintf(stderr, "MODE := transport | tunnel | beet | ro | in_trigger\n");
-	fprintf(stderr, "FLAG-LIST := [ FLAG-LIST ] FLAG\n");
-	fprintf(stderr, "FLAG := noecn | decap-dscp | nopmtudisc | wildrecv | icmp | af-unspec | align4 | esn\n");
-	fprintf(stderr, "EXTRA-FLAG-LIST := [ EXTRA-FLAG-LIST ] EXTRA-FLAG\n");
-	fprintf(stderr, "EXTRA-FLAG := dont-encap-dscp\n");
-	fprintf(stderr, "SELECTOR := [ src ADDR[/PLEN] ] [ dst ADDR[/PLEN] ] [ dev DEV ] [ UPSPEC ]\n");
-	fprintf(stderr, "UPSPEC := proto { { ");
-	fprintf(stderr, "%s | ", strxf_proto(IPPROTO_TCP));
-	fprintf(stderr, "%s | ", strxf_proto(IPPROTO_UDP));
-	fprintf(stderr, "%s | ", strxf_proto(IPPROTO_SCTP));
-	fprintf(stderr, "%s", strxf_proto(IPPROTO_DCCP));
-	fprintf(stderr, " } [ sport PORT ] [ dport PORT ] |\n");
-	fprintf(stderr, "                  { ");
-	fprintf(stderr, "%s | ", strxf_proto(IPPROTO_ICMP));
-	fprintf(stderr, "%s | ", strxf_proto(IPPROTO_ICMPV6));
-	fprintf(stderr, "%s", strxf_proto(IPPROTO_MH));
-	fprintf(stderr, " } [ type NUMBER ] [ code NUMBER ] |\n");
-	fprintf(stderr, "                  %s", strxf_proto(IPPROTO_GRE));
-	fprintf(stderr, " [ key { DOTTED-QUAD | NUMBER } ] | PROTO }\n");
-	fprintf(stderr, "LIMIT-LIST := [ LIMIT-LIST ] limit LIMIT\n");
-	fprintf(stderr, "LIMIT := { time-soft | time-hard | time-use-soft | time-use-hard } SECONDS |\n");
-	fprintf(stderr, "         { byte-soft | byte-hard } SIZE | { packet-soft | packet-hard } COUNT\n");
-	fprintf(stderr, "ENCAP := { espinudp | espinudp-nonike } SPORT DPORT OADDR\n");
-	fprintf(stderr, "DIR := in | out\n");
+	fprintf(stderr,
+		"Usage: ip xfrm state { add | update } ID [ ALGO-LIST ] [ mode MODE ]\n"
+		"        [ mark MARK [ mask MASK ] ] [ reqid REQID ] [ seq SEQ ]\n"
+		"        [ replay-window SIZE ] [ replay-seq SEQ ] [ replay-oseq SEQ ]\n"
+		"        [ replay-seq-hi SEQ ] [ replay-oseq-hi SEQ ]\n"
+		"        [ flag FLAG-LIST ] [ sel SELECTOR ] [ LIMIT-LIST ] [ encap ENCAP ]\n"
+		"        [ coa ADDR[/PLEN] ] [ ctx CTX ] [ extra-flag EXTRA-FLAG-LIST ]\n"
+		"        [ offload [dev DEV] dir DIR ]\n"
+		"        [ output-mark OUTPUT-MARK [ mask MASK ] ]\n"
+		"        [ if_id IF_ID ]\n"
+		"Usage: ip xfrm state allocspi ID [ mode MODE ] [ mark MARK [ mask MASK ] ]\n"
+		"        [ reqid REQID ] [ seq SEQ ] [ min SPI max SPI ]\n"
+		"Usage: ip xfrm state { delete | get } ID [ mark MARK [ mask MASK ] ]\n"
+		"Usage: ip xfrm state deleteall [ ID ] [ mode MODE ] [ reqid REQID ]\n"
+		"        [ flag FLAG-LIST ]\n"
+		"Usage: ip xfrm state list [ nokeys ] [ ID ] [ mode MODE ] [ reqid REQID ]\n"
+		"        [ flag FLAG-LIST ]\n"
+		"Usage: ip xfrm state flush [ proto XFRM-PROTO ]\n"
+		"Usage: ip xfrm state count\n"
+		"ID := [ src ADDR ] [ dst ADDR ] [ proto XFRM-PROTO ] [ spi SPI ]\n"
+		"XFRM-PROTO := ");
+	fprintf(stderr,
+		"%s | %s | %s | %s | %s\n",
+		strxf_xfrmproto(IPPROTO_ESP),
+		strxf_xfrmproto(IPPROTO_AH),
+		strxf_xfrmproto(IPPROTO_COMP),
+		strxf_xfrmproto(IPPROTO_ROUTING),
+		strxf_xfrmproto(IPPROTO_DSTOPTS));
+	fprintf(stderr,
+		"ALGO-LIST := [ ALGO-LIST ] ALGO\n"
+		"ALGO := { ");
+	fprintf(stderr,
+		"%s | %s",
+		strxf_algotype(XFRMA_ALG_CRYPT),
+		strxf_algotype(XFRMA_ALG_AUTH));
+	fprintf(stderr,
+		" } ALGO-NAME ALGO-KEYMAT |\n"
+		"        %s", strxf_algotype(XFRMA_ALG_AUTH_TRUNC));
+	fprintf(stderr,
+		" ALGO-NAME ALGO-KEYMAT ALGO-TRUNC-LEN |\n"
+		"        %s", strxf_algotype(XFRMA_ALG_AEAD));
+	fprintf(stderr,
+		" ALGO-NAME ALGO-KEYMAT ALGO-ICV-LEN |\n"
+		"        %s", strxf_algotype(XFRMA_ALG_COMP));
+	fprintf(stderr,
+		" ALGO-NAME\n"
+		"MODE := transport | tunnel | beet | ro | in_trigger\n"
+		"FLAG-LIST := [ FLAG-LIST ] FLAG\n"
+		"FLAG := noecn | decap-dscp | nopmtudisc | wildrecv | icmp | af-unspec | align4 | esn\n"
+		"EXTRA-FLAG-LIST := [ EXTRA-FLAG-LIST ] EXTRA-FLAG\n"
+		"EXTRA-FLAG := dont-encap-dscp | oseq-may-wrap\n"
+		"SELECTOR := [ src ADDR[/PLEN] ] [ dst ADDR[/PLEN] ] [ dev DEV ] [ UPSPEC ]\n"
+		"UPSPEC := proto { { tcp | udp | sctp | dccp } [ sport PORT ] [ dport PORT ] |\n"
+		"                  { icmp | ipv6-icmp | mobility-header } [ type NUMBER ] [ code NUMBER ] |\n"
+		"                  gre [ key { DOTTED-QUAD | NUMBER } ] | PROTO }\n"
+		"LIMIT-LIST := [ LIMIT-LIST ] limit LIMIT\n"
+		"LIMIT := { time-soft | time-hard | time-use-soft | time-use-hard } SECONDS |\n"
+		"         { byte-soft | byte-hard } SIZE | { packet-soft | packet-hard } COUNT\n"
+		"ENCAP := { espinudp | espinudp-nonike | espintcp } SPORT DPORT OADDR\n"
+		"DIR := in | out\n");
 
 	exit(-1);
 }
@@ -250,6 +253,8 @@ static int xfrm_state_extra_flag_parse(__u32 *extra_flags, int *argcp, char ***a
 		while (1) {
 			if (strcmp(*argv, "dont-encap-dscp") == 0)
 				*extra_flags |= XFRM_SA_XFLAG_DONT_ENCAP_DSCP;
+			else if (strcmp(*argv, "oseq-may-wrap") == 0)
+				*extra_flags |= XFRM_SA_XFLAG_OSEQ_MAY_WRAP;
 			else {
 				PREV_ARG(); /* back track */
 				break;
@@ -323,7 +328,9 @@ static int xfrm_state_modify(int cmd, unsigned int flags, int argc, char **argv)
 		struct xfrm_user_sec_ctx sctx;
 		char    str[CTX_BUF_SIZE];
 	} ctx = {};
-	__u32 output_mark = 0;
+	struct xfrm_mark output_mark = {0, 0};
+	bool is_if_id_set = false;
+	__u32 if_id = 0;
 
 	while (argc > 0) {
 		if (strcmp(*argv, "mode") == 0) {
@@ -441,8 +448,23 @@ static int xfrm_state_modify(int cmd, unsigned int flags, int argc, char **argv)
 			}
 		} else if (strcmp(*argv, "output-mark") == 0) {
 			NEXT_ARG();
-			if (get_u32(&output_mark, *argv, 0))
+			if (get_u32(&output_mark.v, *argv, 0))
 				invarg("value after \"output-mark\" is invalid", *argv);
+			if (argc > 1) {
+				NEXT_ARG();
+				if (strcmp(*argv, "mask") == 0) {
+					NEXT_ARG();
+					if (get_u32(&output_mark.m, *argv, 0))
+						invarg("mask value is invalid\n", *argv);
+				} else {
+					PREV_ARG();
+				}
+			}
+		} else if (strcmp(*argv, "if_id") == 0) {
+			NEXT_ARG();
+			if (get_u32(&if_id, *argv, 0))
+				invarg("value after \"if_id\" is invalid", *argv);
+			is_if_id_set = true;
 		} else {
 			/* try to assume ALGO */
 			int type = xfrm_algotype_getbyname(*argv);
@@ -625,6 +647,9 @@ static int xfrm_state_modify(int cmd, unsigned int flags, int argc, char **argv)
 		}
 	}
 
+	if (is_if_id_set)
+		addattr32(&req.n, sizeof(req.buf), XFRMA_IF_ID, if_id);
+
 	if (xfrm_xfrmproto_is_ipsec(req.xsinfo.id.proto)) {
 		switch (req.xsinfo.mode) {
 		case XFRM_MODE_TRANSPORT:
@@ -726,8 +751,11 @@ static int xfrm_state_modify(int cmd, unsigned int flags, int argc, char **argv)
 		}
 	}
 
-	if (output_mark)
-		addattr32(&req.n, sizeof(req.buf), XFRMA_OUTPUT_MARK, output_mark);
+	if (output_mark.v)
+		addattr32(&req.n, sizeof(req.buf), XFRMA_OUTPUT_MARK, output_mark.v);
+
+	if (output_mark.m)
+		addattr32(&req.n, sizeof(req.buf), XFRMA_SET_MARK_MASK, output_mark.m);
 
 	if (rtnl_open_byproto(&rth, 0, NETLINK_XFRM) < 0)
 		exit(1);
@@ -885,6 +913,10 @@ static int xfrm_state_filter_match(struct xfrm_usersa_info *xsinfo)
 	if (!filter.use)
 		return 1;
 
+	if (filter.xsinfo.family != AF_UNSPEC &&
+	    filter.xsinfo.family != xsinfo->family)
+		return 0;
+
 	if (filter.id_src_mask)
 		if (xfrm_addr_match(&xsinfo->saddr, &filter.xsinfo.saddr,
 				    filter.id_src_mask))
@@ -908,7 +940,7 @@ static int xfrm_state_filter_match(struct xfrm_usersa_info *xsinfo)
 	return 1;
 }
 
-int xfrm_state_print(struct nlmsghdr *n, void *arg)
+static int __do_xfrm_state_print(struct nlmsghdr *n, void *arg, bool nokeys)
 {
 	FILE *fp = (FILE *)arg;
 	struct rtattr *tb[XFRMA_MAX+1];
@@ -979,7 +1011,7 @@ int xfrm_state_print(struct nlmsghdr *n, void *arg)
 		xsinfo = RTA_DATA(tb[XFRMA_SA]);
 	}
 
-	xfrm_state_info_print(xsinfo, tb, fp, NULL, NULL);
+	xfrm_state_info_print(xsinfo, tb, fp, NULL, NULL, nokeys);
 
 	if (n->nlmsg_type == XFRM_MSG_EXPIRE) {
 		fprintf(fp, "\t");
@@ -992,6 +1024,16 @@ int xfrm_state_print(struct nlmsghdr *n, void *arg)
 	fflush(fp);
 
 	return 0;
+}
+
+int xfrm_state_print(struct nlmsghdr *n, void *arg)
+{
+	return __do_xfrm_state_print(n, arg, false);
+}
+
+int xfrm_state_print_nokeys(struct nlmsghdr *n, void *arg)
+{
+	return __do_xfrm_state_print(n, arg, true);
 }
 
 static int xfrm_state_get_or_delete(int argc, char **argv, int delete)
@@ -1104,6 +1146,10 @@ static int xfrm_state_keep(struct nlmsghdr *n, void *arg)
 	if (!xfrm_state_filter_match(xsinfo))
 		return 0;
 
+	if (xsinfo->id.proto == IPPROTO_IPIP ||
+	    xsinfo->id.proto == IPPROTO_IPV6)
+		return 0;
+
 	if (xb->offset > xb->size) {
 		fprintf(stderr, "State buffer overflow\n");
 		return -1;
@@ -1145,13 +1191,16 @@ static int xfrm_state_list_or_deleteall(int argc, char **argv, int deleteall)
 {
 	char *idp = NULL;
 	struct rtnl_handle rth;
+	bool nokeys = false;
 
-	if (argc > 0)
+	if (argc > 0 || preferred_family != AF_UNSPEC)
 		filter.use = 1;
 	filter.xsinfo.family = preferred_family;
 
 	while (argc > 0) {
-		if (strcmp(*argv, "mode") == 0) {
+		if (strcmp(*argv, "nokeys") == 0) {
+			nokeys = true;
+		} else if (strcmp(*argv, "mode") == 0) {
 			NEXT_ARG();
 			xfrm_mode_parse(&filter.xsinfo.mode, &argc, &argv);
 
@@ -1267,7 +1316,9 @@ static int xfrm_state_list_or_deleteall(int argc, char **argv, int deleteall)
 			exit(1);
 		}
 
-		if (rtnl_dump_filter(&rth, xfrm_state_print, stdout) < 0) {
+		rtnl_filter_t filter = nokeys ?
+				xfrm_state_print_nokeys : xfrm_state_print;
+		if (rtnl_dump_filter(&rth, filter, stdout) < 0) {
 			fprintf(stderr, "Dump terminated\n");
 			exit(1);
 		}

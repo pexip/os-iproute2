@@ -40,19 +40,25 @@ static struct
 	int flushp;
 	int flushe;
 	int master;
+	int protocol;
+	__u8 ndm_flags;
 } filter;
 
 static void usage(void) __attribute__((noreturn));
 
 static void usage(void)
 {
-	fprintf(stderr, "Usage: ip neigh { add | del | change | replace }\n"
-			"                { ADDR [ lladdr LLADDR ] [ nud STATE ] | proxy ADDR } [ dev DEV ]\n");
-	fprintf(stderr, "                                 [ router ] [ extern_learn ]\n\n");
-	fprintf(stderr, "       ip neigh { show | flush } [ proxy ] [ to PREFIX ] [ dev DEV ] [ nud STATE ]\n");
-	fprintf(stderr, "                                 [ vrf NAME ]\n\n");
-	fprintf(stderr, "STATE := { permanent | noarp | stale | reachable | none |\n"
-			"           incomplete | delay | probe | failed }\n");
+	fprintf(stderr,
+		"Usage: ip neigh { add | del | change | replace }\n"
+		"		{ ADDR [ lladdr LLADDR ] [ nud STATE ] | proxy ADDR } [ dev DEV ]\n"
+		"		[ router ] [ extern_learn ] [ protocol PROTO ]\n"
+		"\n"
+		"	ip neigh { show | flush } [ proxy ] [ to PREFIX ] [ dev DEV ] [ nud STATE ]\n"
+		"				  [ vrf NAME ]\n"
+		"	ip neigh get { ADDR | proxy ADDR } dev DEV\n"
+		"\n"
+		"STATE := { permanent | noarp | stale | reachable | none |\n"
+		"           incomplete | delay | probe | failed }\n");
 	exit(-1);
 }
 
@@ -148,6 +154,14 @@ static int ipneigh_modify(int cmd, int flags, int argc, char **argv)
 			NEXT_ARG();
 			dev = *argv;
 			dev_ok = 1;
+		} else if (matches(*argv, "protocol") == 0) {
+			__u32 proto;
+
+			NEXT_ARG();
+			if (rtnl_rtprot_a2n(&proto, *argv))
+				invarg("\"protocol\" value is invalid\n", *argv);
+			if (addattr8(&req.n, sizeof(req), NDA_PROTOCOL, proto))
+				return -1;
 		} else {
 			if (strcmp(*argv, "to") == 0) {
 				NEXT_ARG();
@@ -244,6 +258,7 @@ int print_neigh(struct nlmsghdr *n, void *arg)
 	int len = n->nlmsg_len;
 	struct rtattr *tb[NDA_MAX+1];
 	static int logit = 1;
+	__u8 protocol = 0;
 
 	if (n->nlmsg_type != RTM_NEWNEIGH && n->nlmsg_type != RTM_DELNEIGH &&
 	    n->nlmsg_type != RTM_GETNEIGH) {
@@ -283,6 +298,12 @@ int print_neigh(struct nlmsghdr *n, void *arg)
 	parse_rtattr(tb, NDA_MAX, NDA_RTA(r), n->nlmsg_len - NLMSG_LENGTH(sizeof(*r)));
 
 	if (inet_addr_match_rta(&filter.pfx, tb[NDA_DST]))
+		return 0;
+
+	if (tb[NDA_PROTOCOL])
+		protocol = rta_getattr_u8(tb[NDA_PROTOCOL]);
+
+	if (filter.protocol && filter.protocol != protocol)
 		return 0;
 
 	if (filter.unused_only && tb[NDA_CACHEINFO]) {
@@ -367,6 +388,9 @@ int print_neigh(struct nlmsghdr *n, void *arg)
 	if (r->ndm_flags & NTF_EXT_LEARNED)
 		print_null(PRINT_ANY, "extern_learn", " %s ", "extern_learn");
 
+	if (r->ndm_flags & NTF_OFFLOADED)
+		print_null(PRINT_ANY, "offload", " %s", "offload");
+
 	if (show_stats) {
 		if (tb[NDA_CACHEINFO])
 			print_cacheinfo(RTA_DATA(tb[NDA_CACHEINFO]));
@@ -378,6 +402,13 @@ int print_neigh(struct nlmsghdr *n, void *arg)
 
 	if (r->ndm_state)
 		print_neigh_state(r->ndm_state);
+
+	if (protocol) {
+		SPRINT_BUF(b1);
+
+		print_string(PRINT_ANY, "protocol", " proto %s ",
+			     rtnl_rtprot_n2a(protocol, b1, sizeof(b1)));
+	}
 
 	print_string(PRINT_FP, NULL, "\n", "");
 	close_json_object();
@@ -393,16 +424,29 @@ void ipneigh_reset_filter(int ifindex)
 	filter.index = ifindex;
 }
 
+static int ipneigh_dump_filter(struct nlmsghdr *nlh, int reqlen)
+{
+	struct ndmsg *ndm = NLMSG_DATA(nlh);
+	int err;
+
+	ndm->ndm_flags = filter.ndm_flags;
+
+	if (filter.index) {
+		err = addattr32(nlh, reqlen, NDA_IFINDEX, filter.index);
+		if (err)
+			return err;
+	}
+	if (filter.master) {
+		err = addattr32(nlh, reqlen, NDA_MASTER, filter.master);
+		if (err)
+			return err;
+	}
+
+	return 0;
+}
+
 static int do_show_or_flush(int argc, char **argv, int flush)
 {
-	struct {
-		struct nlmsghdr	n;
-		struct ndmsg		ndm;
-		char			buf[256];
-	} req = {
-		.n.nlmsg_type = RTM_GETNEIGH,
-		.n.nlmsg_len = NLMSG_LENGTH(sizeof(struct ndmsg)),
-	};
 	char *filter_dev = NULL;
 	int state_given = 0;
 
@@ -433,7 +477,6 @@ static int do_show_or_flush(int argc, char **argv, int flush)
 			ifindex = ll_name_to_index(*argv);
 			if (!ifindex)
 				invarg("Device does not exist\n", *argv);
-			addattr32(&req.n, sizeof(req), NDA_MASTER, ifindex);
 			filter.master = ifindex;
 		} else if (strcmp(*argv, "vrf") == 0) {
 			int ifindex;
@@ -444,7 +487,6 @@ static int do_show_or_flush(int argc, char **argv, int flush)
 				invarg("Not a valid VRF name\n", *argv);
 			if (!name_is_vrf(*argv))
 				invarg("Not a valid VRF name\n", *argv);
-			addattr32(&req.n, sizeof(req), NDA_MASTER, ifindex);
 			filter.master = ifindex;
 		} else if (strcmp(*argv, "unused") == 0) {
 			filter.unused_only = 1;
@@ -466,9 +508,19 @@ static int do_show_or_flush(int argc, char **argv, int flush)
 			if (state == 0)
 				state = 0x100;
 			filter.state |= state;
-		} else if (strcmp(*argv, "proxy") == 0)
-			req.ndm.ndm_flags = NTF_PROXY;
-		else {
+		} else if (strcmp(*argv, "proxy") == 0) {
+			filter.ndm_flags = NTF_PROXY;
+		} else if (matches(*argv, "protocol") == 0) {
+			__u32 prot;
+
+			NEXT_ARG();
+			if (rtnl_rtprot_a2n(&prot, *argv)) {
+				if (strcmp(*argv, "all"))
+					invarg("invalid \"protocol\"\n", *argv);
+				prot = 0;
+			}
+			filter.protocol = prot;
+		} else {
 			if (strcmp(*argv, "to") == 0) {
 				NEXT_ARG();
 			}
@@ -488,10 +540,7 @@ static int do_show_or_flush(int argc, char **argv, int flush)
 		filter.index = ll_name_to_index(filter_dev);
 		if (!filter.index)
 			return nodev(filter_dev);
-		addattr32(&req.n, sizeof(req), NDA_IFINDEX, filter.index);
 	}
-
-	req.ndm.ndm_family = filter.family;
 
 	if (flush) {
 		int round = 0;
@@ -502,7 +551,8 @@ static int do_show_or_flush(int argc, char **argv, int flush)
 		filter.flushe = sizeof(flushb);
 
 		while (round < MAX_ROUNDS) {
-			if (rtnl_dump_request_n(&rth, &req.n) < 0) {
+			if (rtnl_neighdump_req(&rth, filter.family,
+					       ipneigh_dump_filter) < 0) {
 				perror("Cannot send dump request");
 				exit(1);
 			}
@@ -535,7 +585,7 @@ static int do_show_or_flush(int argc, char **argv, int flush)
 		return 1;
 	}
 
-	if (rtnl_dump_request_n(&rth, &req.n) < 0) {
+	if (rtnl_neighdump_req(&rth, filter.family, ipneigh_dump_filter) < 0) {
 		perror("Cannot send dump request");
 		exit(1);
 	}
@@ -546,6 +596,82 @@ static int do_show_or_flush(int argc, char **argv, int flush)
 		exit(1);
 	}
 	delete_json_obj();
+
+	return 0;
+}
+
+static int ipneigh_get(int argc, char **argv)
+{
+	struct {
+		struct nlmsghdr	n;
+		struct ndmsg		ndm;
+		char			buf[1024];
+	} req = {
+		.n.nlmsg_len = NLMSG_LENGTH(sizeof(struct ndmsg)),
+		.n.nlmsg_flags = NLM_F_REQUEST,
+		.n.nlmsg_type = RTM_GETNEIGH,
+		.ndm.ndm_family = preferred_family,
+	};
+	struct nlmsghdr *answer;
+	char  *d = NULL;
+	int dst_ok = 0;
+	int dev_ok = 0;
+	inet_prefix dst;
+
+	while (argc > 0) {
+		if (strcmp(*argv, "dev") == 0) {
+			NEXT_ARG();
+			d = *argv;
+			dev_ok = 1;
+		} else if (matches(*argv, "proxy") == 0) {
+			NEXT_ARG();
+			if (matches(*argv, "help") == 0)
+				usage();
+			if (dst_ok)
+				duparg("address", *argv);
+			get_addr(&dst, *argv, preferred_family);
+			dst_ok = 1;
+			dev_ok = 1;
+			req.ndm.ndm_flags |= NTF_PROXY;
+		} else {
+			if (strcmp(*argv, "to") == 0)
+				NEXT_ARG();
+
+			if (matches(*argv, "help") == 0)
+				usage();
+			if (dst_ok)
+				duparg2("to", *argv);
+			get_addr(&dst, *argv, preferred_family);
+			dst_ok = 1;
+		}
+		argc--; argv++;
+	}
+
+	if (!dev_ok || !dst_ok || dst.family == AF_UNSPEC) {
+		fprintf(stderr, "Device and address are required arguments.\n");
+		return -1;
+	}
+
+	req.ndm.ndm_family = dst.family;
+	if (addattr_l(&req.n, sizeof(req), NDA_DST, &dst.data, dst.bytelen) < 0)
+		return -1;
+
+	if (d) {
+		req.ndm.ndm_ifindex = ll_name_to_index(d);
+		if (!req.ndm.ndm_ifindex) {
+			fprintf(stderr, "Cannot find device \"%s\"\n", d);
+			return -1;
+		}
+	}
+
+	if (rtnl_talk(&rth, &req.n, &answer) < 0)
+		return -2;
+
+	ipneigh_reset_filter(0);
+	if (print_neigh(answer, stdout) < 0) {
+		fprintf(stderr, "An error :-)\n");
+		return -1;
+	}
 
 	return 0;
 }
@@ -562,10 +688,8 @@ int do_ipneigh(int argc, char **argv)
 			return ipneigh_modify(RTM_NEWNEIGH, NLM_F_CREATE|NLM_F_REPLACE, argc-1, argv+1);
 		if (matches(*argv, "delete") == 0)
 			return ipneigh_modify(RTM_DELNEIGH, 0, argc-1, argv+1);
-		if (matches(*argv, "get") == 0) {
-			fprintf(stderr, "Sorry, \"neigh get\" is not implemented :-(\n");
-			return -1;
-		}
+		if (matches(*argv, "get") == 0)
+			return ipneigh_get(argc-1, argv+1);
 		if (matches(*argv, "show") == 0 ||
 		    matches(*argv, "lst") == 0 ||
 		    matches(*argv, "list") == 0)

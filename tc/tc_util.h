@@ -5,6 +5,7 @@
 #define MAX_MSG 16384
 #include <limits.h>
 #include <linux/if.h>
+#include <stdbool.h>
 
 #include <linux/pkt_sched.h>
 #include <linux/pkt_cls.h>
@@ -40,6 +41,7 @@ struct qdisc_util {
 	int (*parse_copt)(struct qdisc_util *qu, int argc,
 			  char **argv, struct nlmsghdr *n, const char *dev);
 	int (*print_copt)(struct qdisc_util *qu, FILE *f, struct rtattr *opt);
+	int (*has_block)(struct qdisc_util *qu, struct rtattr *opt, __u32 block_idx, bool *p_has);
 };
 
 extern __u16 f_proto;
@@ -101,6 +103,7 @@ int print_tc_classid(char *buf, int len, __u32 h);
 char *sprint_tc_classid(__u32 h, char *buf);
 
 int tc_print_police(FILE *f, struct rtattr *tb);
+int parse_percent(double *val, const char *str);
 int parse_police(int *argc_p, char ***argv_p, int tca_id, struct nlmsghdr *n);
 
 int parse_action_control(int *argc_p, char ***argv_p,
@@ -126,4 +129,12 @@ int action_a2n(char *arg, int *result, bool allow_num);
 
 bool tc_qdisc_block_exists(__u32 block_index);
 
+void print_masked_u32(const char *name, struct rtattr *attr,
+		      struct rtattr *mask_attr, bool newline);
+void print_masked_u16(const char *name, struct rtattr *attr,
+		      struct rtattr *mask_attr, bool newline);
+void print_masked_u8(const char *name, struct rtattr *attr,
+		     struct rtattr *mask_attr, bool newline);
+void print_masked_be16(const char *name, struct rtattr *attr,
+		       struct rtattr *mask_attr, bool newline);
 #endif

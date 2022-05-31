@@ -36,10 +36,11 @@ static struct link_filter vrf_filter;
 
 static void usage(void)
 {
-	fprintf(stderr, "Usage: ip vrf show [NAME] ...\n");
-	fprintf(stderr, "       ip vrf exec [NAME] cmd ...\n");
-	fprintf(stderr, "       ip vrf identify [PID]\n");
-	fprintf(stderr, "       ip vrf pids [NAME]\n");
+	fprintf(stderr,
+		"Usage:	ip vrf show [NAME] ...\n"
+		"	ip vrf exec [NAME] cmd ...\n"
+		"	ip vrf identify [PID]\n"
+		"	ip vrf pids [NAME]\n");
 
 	exit(-1);
 }
@@ -224,7 +225,7 @@ static int ipvrf_pids(int argc, char **argv)
 		return -1;
 	}
 
-	mnt = find_cgroup2_mount();
+	mnt = find_cgroup2_mount(true);
 	if (!mnt)
 		return -1;
 
@@ -365,7 +366,7 @@ static int vrf_switch(const char *name)
 		}
 	}
 
-	mnt = find_cgroup2_mount();
+	mnt = find_cgroup2_mount(true);
 	if (!mnt)
 		return -1;
 
@@ -441,6 +442,13 @@ out:
 	return rc;
 }
 
+static int do_switch(void *arg)
+{
+	char *vrf = arg;
+
+	return vrf_switch(vrf);
+}
+
 static int ipvrf_exec(int argc, char **argv)
 {
 	if (argc < 1) {
@@ -452,10 +460,7 @@ static int ipvrf_exec(int argc, char **argv)
 		return -1;
 	}
 
-	if (vrf_switch(argv[0]))
-		return -1;
-
-	return -cmd_exec(argv[1], argv + 1, !!batch_mode);
+	return -cmd_exec(argv[1], argv + 1, !!batch_mode, do_switch, argv[0]);
 }
 
 /* reset VRF association of current process to default VRF;
@@ -561,9 +566,12 @@ static int ipvrf_print(struct nlmsghdr *n)
 		return 0;
 	}
 
-	printf("%-16s %5u", name, tb_id);
+	open_json_object(NULL);
+	print_string(PRINT_ANY, "name", "%-16s", name);
+	print_uint(PRINT_ANY, "table", " %5u", tb_id);
+	print_string(PRINT_FP, NULL, "%s", "\n");
+	close_json_object();
 
-	printf("\n");
 	return 1;
 }
 
@@ -589,18 +597,24 @@ static int ipvrf_show(int argc, char **argv)
 		return 0;
 	}
 
-	if (ip_linkaddr_list(0, ipvrf_filter_req, &linfo, NULL) == 0) {
+	if (ip_link_list(ipvrf_filter_req, &linfo) == 0) {
 		struct nlmsg_list *l;
 		unsigned nvrf = 0;
-		int n;
 
-		n = printf("%-16s  %5s\n", "Name", "Table");
-		printf("%.*s\n", n-1, "-----------------------");
+		new_json_obj(json);
+
+		print_string(PRINT_FP, NULL, "%-16s", "Name");
+		print_string(PRINT_FP, NULL, "  %5s\n", "Table");
+		print_string(PRINT_FP, NULL, "%s\n",
+			     "-----------------------");
+
 		for (l = linfo.head; l; l = l->next)
 			nvrf += ipvrf_print(&l->h);
 
 		if (!nvrf)
-			printf("No VRF has been configured\n");
+			print_string(PRINT_FP, NULL, "%s\n",
+				     "No VRF has been configured");
+		delete_json_obj();
 	} else
 		rc = 1;
 

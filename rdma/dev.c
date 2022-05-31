@@ -1,19 +1,18 @@
+// SPDX-License-Identifier: GPL-2.0 OR Linux-OpenIB
 /*
  * dev.c	RDMA tool
- *
- *              This program is free software; you can redistribute it and/or
- *              modify it under the terms of the GNU General Public License
- *              as published by the Free Software Foundation; either version
- *              2 of the License, or (at your option) any later version.
- *
  * Authors:     Leon Romanovsky <leonro@mellanox.com>
  */
 
+#include <fcntl.h>
 #include "rdma.h"
 
 static int dev_help(struct rd *rd)
 {
 	pr_out("Usage: %s dev show [DEV]\n", rd->filename);
+	pr_out("       %s dev set [DEV] name DEVNAME\n", rd->filename);
+	pr_out("       %s dev set [DEV] netns NSNAME\n", rd->filename);
+	pr_out("       %s dev set [DEV] adaptive-moderation [on|off]\n", rd->filename);
 	return 0;
 }
 
@@ -95,29 +94,16 @@ static void dev_print_caps(struct rd *rd, struct nlattr **tb)
 
 	caps = mnl_attr_get_u64(tb[RDMA_NLDEV_ATTR_CAP_FLAGS]);
 
-	if (rd->json_output) {
-		jsonw_name(rd->jw, "caps");
-		jsonw_start_array(rd->jw);
-	} else {
-		pr_out("\n    caps: <");
-	}
+	print_color_string(PRINT_FP, COLOR_NONE, NULL, "\n    caps: <", NULL);
+	open_json_array(PRINT_JSON, "caps");
 	for (idx = 0; caps; idx++) {
-		if (caps & 0x1) {
-			if (rd->json_output) {
-				jsonw_string(rd->jw, dev_caps_to_str(idx));
-			} else {
-				pr_out("%s", dev_caps_to_str(idx));
-				if (caps >> 0x1)
-					pr_out(", ");
-			}
-		}
+		if (caps & 0x1)
+			print_color_string(PRINT_ANY, COLOR_NONE, NULL,
+					   caps >> 0x1 ? "%s, " : "%s",
+					   dev_caps_to_str(idx));
 		caps >>= 0x1;
 	}
-
-	if (rd->json_output)
-		jsonw_end_array(rd->jw);
-	else
-		pr_out(">");
+	close_json_array(PRINT_ANY, ">");
 }
 
 static void dev_print_fw(struct rd *rd, struct nlattr **tb)
@@ -127,10 +113,7 @@ static void dev_print_fw(struct rd *rd, struct nlattr **tb)
 		return;
 
 	str = mnl_attr_get_str(tb[RDMA_NLDEV_ATTR_FW_VERSION]);
-	if (rd->json_output)
-		jsonw_string_field(rd->jw, "fw", str);
-	else
-		pr_out("fw %s ", str);
+	print_color_string(PRINT_ANY, COLOR_NONE, "fw", "fw %s ", str);
 }
 
 static void dev_print_node_guid(struct rd *rd, struct nlattr **tb)
@@ -145,10 +128,8 @@ static void dev_print_node_guid(struct rd *rd, struct nlattr **tb)
 	node_guid = mnl_attr_get_u64(tb[RDMA_NLDEV_ATTR_NODE_GUID]);
 	memcpy(vp, &node_guid, sizeof(uint64_t));
 	snprintf(str, 32, "%04x:%04x:%04x:%04x", vp[3], vp[2], vp[1], vp[0]);
-	if (rd->json_output)
-		jsonw_string_field(rd->jw, "node_guid", str);
-	else
-		pr_out("node_guid %s ", str);
+	print_color_string(PRINT_ANY, COLOR_NONE, "node_guid", "node_guid %s ",
+			   str);
 }
 
 static void dev_print_sys_image_guid(struct rd *rd, struct nlattr **tb)
@@ -163,10 +144,23 @@ static void dev_print_sys_image_guid(struct rd *rd, struct nlattr **tb)
 	sys_image_guid = mnl_attr_get_u64(tb[RDMA_NLDEV_ATTR_SYS_IMAGE_GUID]);
 	memcpy(vp, &sys_image_guid, sizeof(uint64_t));
 	snprintf(str, 32, "%04x:%04x:%04x:%04x", vp[3], vp[2], vp[1], vp[0]);
-	if (rd->json_output)
-		jsonw_string_field(rd->jw, "sys_image_guid", str);
-	else
-		pr_out("sys_image_guid %s ", str);
+	print_color_string(PRINT_ANY, COLOR_NONE, "sys_image_guid",
+			   "sys_image_guid %s ", str);
+}
+
+static void dev_print_dim_setting(struct rd *rd, struct nlattr **tb)
+{
+	uint8_t dim_setting;
+
+	if (!tb[RDMA_NLDEV_ATTR_DEV_DIM])
+		return;
+
+	dim_setting = mnl_attr_get_u8(tb[RDMA_NLDEV_ATTR_DEV_DIM]);
+	if (dim_setting > 1)
+		return;
+
+	print_on_off(rd, "adaptive-moderation", dim_setting);
+
 }
 
 static const char *node_type_to_str(uint8_t node_type)
@@ -174,7 +168,8 @@ static const char *node_type_to_str(uint8_t node_type)
 	static const char * const node_type_str[] = { "unknown", "ca",
 						      "switch", "router",
 						      "rnic", "usnic",
-						      "usnic_dp" };
+						      "usnic_udp",
+						      "unspecified" };
 	if (node_type < ARRAY_SIZE(node_type_str))
 		return node_type_str[node_type];
 	return "unknown";
@@ -190,10 +185,8 @@ static void dev_print_node_type(struct rd *rd, struct nlattr **tb)
 
 	node_type = mnl_attr_get_u8(tb[RDMA_NLDEV_ATTR_DEV_NODE_TYPE]);
 	node_str = node_type_to_str(node_type);
-	if (rd->json_output)
-		jsonw_string_field(rd->jw, "node_type", node_str);
-	else
-		pr_out("node_type %s ", node_str);
+	print_color_string(PRINT_ANY, COLOR_NONE, "node_type", "node_type %s ",
+			   node_str);
 }
 
 static int dev_parse_cb(const struct nlmsghdr *nlh, void *data)
@@ -206,25 +199,22 @@ static int dev_parse_cb(const struct nlmsghdr *nlh, void *data)
 	mnl_attr_parse(nlh, 0, rd_attr_cb, tb);
 	if (!tb[RDMA_NLDEV_ATTR_DEV_INDEX] || !tb[RDMA_NLDEV_ATTR_DEV_NAME])
 		return MNL_CB_ERROR;
-
+	open_json_object(NULL);
 	idx =  mnl_attr_get_u32(tb[RDMA_NLDEV_ATTR_DEV_INDEX]);
 	name = mnl_attr_get_str(tb[RDMA_NLDEV_ATTR_DEV_NAME]);
-	if (rd->json_output) {
-		jsonw_uint_field(rd->jw, "ifindex", idx);
-		jsonw_string_field(rd->jw, "ifname", name);
-	} else {
-		pr_out("%u: %s: ", idx, name);
-	}
+	print_color_uint(PRINT_ANY, COLOR_NONE, "ifindex", "%u: ", idx);
+	print_color_string(PRINT_ANY, COLOR_NONE, "ifname", "%s: ", name);
 
 	dev_print_node_type(rd, tb);
 	dev_print_fw(rd, tb);
 	dev_print_node_guid(rd, tb);
 	dev_print_sys_image_guid(rd, tb);
-	if (rd->show_details)
+	if (rd->show_details) {
+		dev_print_dim_setting(rd, tb);
 		dev_print_caps(rd, tb);
+	}
 
-	if (!rd->json_output)
-		pr_out("\n");
+	newline(rd);
 	return MNL_CB_OK;
 }
 
@@ -240,11 +230,7 @@ static int dev_no_args(struct rd *rd)
 	if (ret)
 		return ret;
 
-	if (rd->json_output)
-		jsonw_start_object(rd->jw);
 	ret = rd_recv_msg(rd, dev_parse_cb, rd, seq);
-	if (rd->json_output)
-		jsonw_end_object(rd->jw);
 	return ret;
 }
 
@@ -258,9 +244,112 @@ static int dev_one_show(struct rd *rd)
 	return rd_exec_cmd(rd, cmds, "parameter");
 }
 
+static int dev_set_name(struct rd *rd)
+{
+	uint32_t seq;
+
+	if (rd_no_arg(rd)) {
+		pr_err("Please provide device new name.\n");
+		return -EINVAL;
+	}
+
+	rd_prepare_msg(rd, RDMA_NLDEV_CMD_SET,
+		       &seq, (NLM_F_REQUEST | NLM_F_ACK));
+	mnl_attr_put_u32(rd->nlh, RDMA_NLDEV_ATTR_DEV_INDEX, rd->dev_idx);
+	mnl_attr_put_strz(rd->nlh, RDMA_NLDEV_ATTR_DEV_NAME, rd_argv(rd));
+
+	return rd_sendrecv_msg(rd, seq);
+}
+
+static int dev_set_netns(struct rd *rd)
+{
+	char *netns_path;
+	uint32_t seq;
+	int netns;
+	int ret;
+
+	if (rd_no_arg(rd)) {
+		pr_err("Please provide device name.\n");
+		return -EINVAL;
+	}
+
+	if (asprintf(&netns_path, "%s/%s", NETNS_RUN_DIR, rd_argv(rd)) < 0)
+		return -ENOMEM;
+
+	netns = open(netns_path, O_RDONLY | O_CLOEXEC);
+	if (netns < 0) {
+		fprintf(stderr, "Cannot open network namespace \"%s\": %s\n",
+			rd_argv(rd), strerror(errno));
+		ret = -EINVAL;
+		goto done;
+	}
+
+	rd_prepare_msg(rd, RDMA_NLDEV_CMD_SET,
+		       &seq, (NLM_F_REQUEST | NLM_F_ACK));
+	mnl_attr_put_u32(rd->nlh, RDMA_NLDEV_ATTR_DEV_INDEX, rd->dev_idx);
+	mnl_attr_put_u32(rd->nlh, RDMA_NLDEV_NET_NS_FD, netns);
+	ret = rd_sendrecv_msg(rd, seq);
+	close(netns);
+done:
+	free(netns_path);
+	return ret;
+}
+
+static int dev_set_dim_sendmsg(struct rd *rd, uint8_t dim_setting)
+{
+	uint32_t seq;
+
+	rd_prepare_msg(rd, RDMA_NLDEV_CMD_SET, &seq,
+		       (NLM_F_REQUEST | NLM_F_ACK));
+	mnl_attr_put_u32(rd->nlh, RDMA_NLDEV_ATTR_DEV_INDEX, rd->dev_idx);
+	mnl_attr_put_u8(rd->nlh, RDMA_NLDEV_ATTR_DEV_DIM, dim_setting);
+
+	return rd_sendrecv_msg(rd, seq);
+}
+
+static int dev_set_dim_off(struct rd *rd)
+{
+	return dev_set_dim_sendmsg(rd, 0);
+}
+
+static int dev_set_dim_on(struct rd *rd)
+{
+	return dev_set_dim_sendmsg(rd, 1);
+}
+
+static int dev_set_dim(struct rd *rd)
+{
+	const struct rd_cmd cmds[] = {
+		{ NULL,		dev_help},
+		{ "on",		dev_set_dim_on},
+		{ "off",	dev_set_dim_off},
+		{ 0 }
+	};
+
+	return rd_exec_cmd(rd, cmds, "parameter");
+}
+
+static int dev_one_set(struct rd *rd)
+{
+	const struct rd_cmd cmds[] = {
+		{ NULL,		dev_help},
+		{ "name",	dev_set_name},
+		{ "netns",	dev_set_netns},
+		{ "adaptive-moderation",	dev_set_dim},
+		{ 0 }
+	};
+
+	return rd_exec_cmd(rd, cmds, "parameter");
+}
+
 static int dev_show(struct rd *rd)
 {
 	return rd_exec_dev(rd, dev_one_show);
+}
+
+static int dev_set(struct rd *rd)
+{
+	return rd_exec_require_dev(rd, dev_one_set);
 }
 
 int cmd_dev(struct rd *rd)
@@ -269,6 +358,7 @@ int cmd_dev(struct rd *rd)
 		{ NULL,		dev_show },
 		{ "show",	dev_show },
 		{ "list",	dev_show },
+		{ "set",	dev_set },
 		{ "help",	dev_help },
 		{ 0 }
 	};

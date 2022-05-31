@@ -60,7 +60,11 @@ ip-xfrm \- transform configuration
 .RB "[ " extra-flag
 .IR EXTRA-FLAG-LIST " ]"
 .RB "[ " output-mark
-.IR OUTPUT-MARK " ]"
+.IR OUTPUT-MARK
+.RB "[ " mask
+.IR MASK " ] ]"
+.RB "[ " if_id
+.IR IF-ID " ]"
 
 .ti -8
 .B "ip xfrm state allocspi"
@@ -89,8 +93,19 @@ ip-xfrm \- transform configuration
 .IR MASK " ] ]"
 
 .ti -8
-.BR "ip xfrm state" " { " deleteall " | " list " } ["
+.BR ip " [ " -4 " | " -6 " ] " "xfrm state deleteall" " ["
 .IR ID " ]"
+.RB "[ " mode
+.IR MODE " ]"
+.RB "[ " reqid
+.IR REQID " ]"
+.RB "[ " flag
+.IR FLAG-LIST " ]"
+
+.ti -8
+.BR ip " [ " -4 " | " -6 " ] " "xfrm state list" " ["
+.IR ID " ]"
+.RB "[ " nokeys " ]"
 .RB "[ " mode
 .IR MODE " ]"
 .RB "[ " reqid
@@ -196,7 +211,7 @@ ip-xfrm \- transform configuration
 
 .ti -8
 .IR ENCAP " :="
-.RB "{ " espinudp " | " espinudp-nonike " }"
+.RB "{ " espinudp " | " espinudp-nonike " | " espintcp " }"
 .IR SPORT " " DPORT " " OADDR
 
 .ti -8
@@ -204,7 +219,7 @@ ip-xfrm \- transform configuration
 
 .ti -8
 .IR EXTRA-FLAG " := "
-.B dont-encap-dscp
+.BR dont-encap-dscp " | " oseq-may-wrap
 
 .ti -8
 .BR "ip xfrm policy" " { " add " | " update " }"
@@ -227,6 +242,8 @@ ip-xfrm \- transform configuration
 .IR PRIORITY " ]"
 .RB "[ " flag
 .IR FLAG-LIST " ]"
+.RB "[ " if_id
+.IR IF-ID " ]"
 .RI "[ " LIMIT-LIST " ] [ " TMPL-LIST " ]"
 
 .ti -8
@@ -244,9 +261,11 @@ ip-xfrm \- transform configuration
 .IR MASK " ] ]"
 .RB "[ " ptype
 .IR PTYPE " ]"
+.RB "[ " if_id
+.IR IF-ID " ]"
 
 .ti -8
-.BR "ip xfrm policy" " { " deleteall " | " list " }"
+.BR ip " [ " -4 " | " -6 " ] " "xfrm policy" " { " deleteall " | " list " }"
 .RB "[ " nosock " ]"
 .RI "[ " SELECTOR " ]"
 .RB "[ " dir
@@ -380,6 +399,8 @@ ip-xfrm \- transform configuration
 .ti -8
 .BR "ip xfrm monitor" " ["
 .BI all-nsid
+] [
+.BI nokeys
 ] [
 .BI all
  |
@@ -535,7 +556,7 @@ sets limits in seconds, bytes, or numbers of packets.
 .TP
 .I ENCAP
 encapsulates packets with protocol
-.BR espinudp " or " espinudp-nonike ","
+.BR espinudp ", " espinudp-nonike ", or " espintcp ","
 .RI "using source port " SPORT ", destination port "  DPORT
 .RI ", and original address " OADDR "."
 
@@ -547,6 +568,10 @@ used to match xfrm policies and states
 .I OUTPUT-MARK
 used to set the output mark to influence the routing
 of the packets emitted by the state
+
+.TP
+.I IF-ID
+xfrm interface identifier used to in both xfrm policies and states
 
 .sp
 .PP

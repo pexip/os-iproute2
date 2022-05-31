@@ -1,11 +1,6 @@
+// SPDX-License-Identifier: GPL-2.0 OR Linux-OpenIB
 /*
  * utils.c	RDMA tool
- *
- *              This program is free software; you can redistribute it and/or
- *              modify it under the terms of the GNU General Public License
- *              as published by the Free Software Foundation; either version
- *              2 of the License, or (at your option) any later version.
- *
  * Authors:     Leon Romanovsky <leonro@mellanox.com>
  */
 
@@ -18,14 +13,14 @@ int rd_argc(struct rd *rd)
 	return rd->argc;
 }
 
-static char *rd_argv(struct rd *rd)
+char *rd_argv(struct rd *rd)
 {
 	if (!rd_argc(rd))
 		return NULL;
 	return *rd->argv;
 }
 
-static int strcmpx(const char *str1, const char *str2)
+int strcmpx(const char *str1, const char *str2)
 {
 	if (strlen(str1) > strlen(str2))
 		return -1;
@@ -39,7 +34,7 @@ static bool rd_argv_match(struct rd *rd, const char *pattern)
 	return strcmpx(rd_argv(rd), pattern) == 0;
 }
 
-static void rd_arg_inc(struct rd *rd)
+void rd_arg_inc(struct rd *rd)
 {
 	if (!rd_argc(rd))
 		return;
@@ -47,7 +42,7 @@ static void rd_arg_inc(struct rd *rd)
 	rd->argv++;
 }
 
-static bool rd_no_arg(struct rd *rd)
+bool rd_no_arg(struct rd *rd)
 {
 	return rd_argc(rd) == 0;
 }
@@ -61,7 +56,7 @@ static bool rd_no_arg(struct rd *rd)
  * mlx5_1/1    | 1          | false
  * mlx5_1/-    | 0          | false
  *
- * In strict mode, /- will return error.
+ * In strict port mode, a non-0 port must be provided
  */
 static int get_port_from_argv(struct rd *rd, uint32_t *port,
 			      bool *is_dump_all, bool strict_port)
@@ -69,7 +64,7 @@ static int get_port_from_argv(struct rd *rd, uint32_t *port,
 	char *slash;
 
 	*port = 0;
-	*is_dump_all = true;
+	*is_dump_all = strict_port ? false : true;
 
 	slash = strchr(rd_argv(rd), '/');
 	/* if no port found, return 0 */
@@ -88,6 +83,9 @@ static int get_port_from_argv(struct rd *rd, uint32_t *port,
 		if (!*port && strlen(slash))
 			return -EINVAL;
 	}
+	if (strict_port && (*port == 0))
+		return -EINVAL;
+
 	return 0;
 }
 
@@ -126,6 +124,7 @@ static int add_filter(struct rd *rd, char *key, char *value,
 	struct filter_entry *fe;
 	bool key_found = false;
 	int idx = 0;
+	char *endp;
 	int ret;
 
 	fe = calloc(1, sizeof(*fe));
@@ -168,6 +167,11 @@ static int add_filter(struct rd *rd, char *key, char *value,
 		goto err_alloc;
 	}
 
+	errno = 0;
+	strtol(fe->value, &endp, 10);
+	if (valid_filters[idx].is_doit && !errno && *endp == '\0')
+		fe->is_doit = true;
+
 	for (idx = 0; idx < strlen(fe->value); idx++)
 		fe->value[idx] = tolower(fe->value[idx]);
 
@@ -180,6 +184,20 @@ err_alloc:
 err:
 	free(fe);
 	return ret;
+}
+
+bool rd_doit_index(struct rd *rd, uint32_t *idx)
+{
+	struct filter_entry *fe;
+
+	list_for_each_entry(fe, &rd->filter_list, list) {
+		if (fe->is_doit) {
+			*idx = atoi(fe->value);
+			return true;
+		}
+	}
+
+	return false;
 }
 
 int rd_build_filter(struct rd *rd, const struct filters valid_filters[])
@@ -218,7 +236,7 @@ out:
 	return ret;
 }
 
-bool rd_check_is_key_exist(struct rd *rd, const char *key)
+static bool rd_check_is_key_exist(struct rd *rd, const char *key)
 {
 	struct filter_entry *fe;
 
@@ -234,8 +252,8 @@ bool rd_check_is_key_exist(struct rd *rd, const char *key)
  * Check if string entry is filtered:
  *  * key doesn't exist -> user didn't request -> not filtered
  */
-bool rd_check_is_string_filtered(struct rd *rd,
-				 const char *key, const char *val)
+static bool rd_check_is_string_filtered(struct rd *rd, const char *key,
+					const char *val)
 {
 	bool key_is_filtered = false;
 	struct filter_entry *fe;
@@ -285,7 +303,7 @@ out:
  * Check if key is filtered:
  * key doesn't exist -> user didn't request -> not filtered
  */
-bool rd_check_is_filtered(struct rd *rd, const char *key, uint32_t val)
+static bool rd_check_is_filtered(struct rd *rd, const char *key, uint32_t val)
 {
 	bool key_is_filtered = false;
 	struct filter_entry *fe;
@@ -332,6 +350,24 @@ bool rd_check_is_filtered(struct rd *rd, const char *key, uint32_t val)
 
 out:
 	return key_is_filtered;
+}
+
+bool rd_is_filtered_attr(struct rd *rd, const char *key, uint32_t val,
+			 struct nlattr *attr)
+{
+	if (!attr)
+		return rd_check_is_key_exist(rd, key);
+
+	return rd_check_is_filtered(rd, key, val);
+}
+
+bool rd_is_string_filtered_attr(struct rd *rd, const char *key, const char *val,
+				struct nlattr *attr)
+{
+	if (!attr)
+		rd_check_is_key_exist(rd, key);
+
+	return rd_check_is_string_filtered(rd, key, val);
 }
 
 static void filters_cleanup(struct rd *rd)
@@ -402,9 +438,22 @@ static const enum mnl_attr_data_type nldev_policy[RDMA_NLDEV_ATTR_MAX] = {
 	[RDMA_NLDEV_ATTR_DRIVER_U32] = MNL_TYPE_U32,
 	[RDMA_NLDEV_ATTR_DRIVER_S64] = MNL_TYPE_U64,
 	[RDMA_NLDEV_ATTR_DRIVER_U64] = MNL_TYPE_U64,
+	[RDMA_NLDEV_SYS_ATTR_NETNS_MODE] = MNL_TYPE_U8,
+	[RDMA_NLDEV_ATTR_STAT_COUNTER] = MNL_TYPE_NESTED,
+	[RDMA_NLDEV_ATTR_STAT_COUNTER_ENTRY] = MNL_TYPE_NESTED,
+	[RDMA_NLDEV_ATTR_STAT_COUNTER_ID] = MNL_TYPE_U32,
+	[RDMA_NLDEV_ATTR_STAT_HWCOUNTERS] = MNL_TYPE_NESTED,
+	[RDMA_NLDEV_ATTR_STAT_HWCOUNTER_ENTRY] = MNL_TYPE_NESTED,
+	[RDMA_NLDEV_ATTR_STAT_HWCOUNTER_ENTRY_NAME] = MNL_TYPE_NUL_STRING,
+	[RDMA_NLDEV_ATTR_STAT_HWCOUNTER_ENTRY_VALUE] = MNL_TYPE_U64,
+	[RDMA_NLDEV_ATTR_STAT_MODE] = MNL_TYPE_U32,
+	[RDMA_NLDEV_ATTR_STAT_RES] = MNL_TYPE_U32,
+	[RDMA_NLDEV_ATTR_STAT_AUTO_MODE_MASK] = MNL_TYPE_U32,
+	[RDMA_NLDEV_ATTR_DEV_DIM] = MNL_TYPE_U8,
+	[RDMA_NLDEV_ATTR_RES_RAW] = MNL_TYPE_BINARY,
 };
 
-static int rd_attr_check(const struct nlattr *attr, int *typep)
+int rd_attr_check(const struct nlattr *attr, int *typep)
 {
 	int type;
 
@@ -500,8 +549,7 @@ int rd_exec_link(struct rd *rd, int (*cb)(struct rd *rd), bool strict_port)
 	uint32_t port;
 	int ret = 0;
 
-	if (rd->json_output)
-		jsonw_start_array(rd->jw);
+	new_json_obj(rd->json_output);
 	if (rd_no_arg(rd)) {
 		list_for_each_entry(dev_map, &rd->dev_map_list, list) {
 			rd->dev_idx = dev_map->idx;
@@ -541,8 +589,7 @@ int rd_exec_link(struct rd *rd, int (*cb)(struct rd *rd), bool strict_port)
 	}
 
 out:
-	if (rd->json_output)
-		jsonw_end_array(rd->jw);
+	delete_json_obj();
 	return ret;
 }
 
@@ -551,8 +598,7 @@ int rd_exec_dev(struct rd *rd, int (*cb)(struct rd *rd))
 	struct dev_map *dev_map;
 	int ret = 0;
 
-	if (rd->json_output)
-		jsonw_start_array(rd->jw);
+	new_json_obj(rd->json_output);
 	if (rd_no_arg(rd)) {
 		list_for_each_entry(dev_map, &rd->dev_map_list, list) {
 			rd->dev_idx = dev_map->idx;
@@ -572,9 +618,18 @@ int rd_exec_dev(struct rd *rd, int (*cb)(struct rd *rd))
 		ret = cb(rd);
 	}
 out:
-	if (rd->json_output)
-		jsonw_end_array(rd->jw);
+	delete_json_obj();
 	return ret;
+}
+
+int rd_exec_require_dev(struct rd *rd, int (*cb)(struct rd *rd))
+{
+	if (rd_no_arg(rd)) {
+		pr_err("Please provide device name.\n");
+		return -EINVAL;
+	}
+
+	return rd_exec_dev(rd, cb);
 }
 
 int rd_exec_cmd(struct rd *rd, const struct rd_cmd *cmds, const char *str)
@@ -650,7 +705,25 @@ int rd_recv_msg(struct rd *rd, mnl_cb_t callback, void *data, unsigned int seq)
 		ret = mnl_cb_run(buf, ret, seq, portid, callback, data);
 	} while (ret > 0);
 
+	if (ret < 0 && !rd->suppress_errors)
+		perror("error");
+
 	mnl_socket_close(rd->nl);
+	return ret;
+}
+
+static int null_cb(const struct nlmsghdr *nlh, void *data)
+{
+	return MNL_CB_OK;
+}
+
+int rd_sendrecv_msg(struct rd *rd, unsigned int seq)
+{
+	int ret;
+
+	ret = rd_send_msg(rd);
+	if (!ret)
+		ret = rd_recv_msg(rd, null_cb, rd, seq);
 	return ret;
 }
 
@@ -690,123 +763,151 @@ struct dev_map *dev_map_lookup(struct rd *rd, bool allow_port_index)
 
 void newline(struct rd *rd)
 {
-	if (rd->json_output)
-		jsonw_end_array(rd->jw);
-	else
-		pr_out("\n");
+	close_json_object();
+	print_color_string(PRINT_FP, COLOR_NONE, NULL, "\n", NULL);
 }
 
-static void newline_indent(struct rd *rd)
+void newline_indent(struct rd *rd)
 {
 	newline(rd);
-	if (!rd->json_output)
-		pr_out("    ");
+	print_color_string(PRINT_FP, COLOR_NONE, NULL, "    ", NULL);
 }
 
 static int print_driver_string(struct rd *rd, const char *key_str,
 				 const char *val_str)
 {
-	if (rd->json_output) {
-		jsonw_string_field(rd->jw, key_str, val_str);
-		return 0;
-	} else {
-		return pr_out("%s %s ", key_str, val_str);
-	}
+	print_color_string(PRINT_ANY, COLOR_NONE, key_str, key_str, val_str);
+	print_color_string(PRINT_FP, COLOR_NONE, NULL, " %s ", val_str);
+	return 0;
+}
+
+void print_on_off(struct rd *rd, const char *key_str, bool on)
+{
+	print_driver_string(rd, key_str, (on) ? "on":"off");
 }
 
 static int print_driver_s32(struct rd *rd, const char *key_str, int32_t val,
 			      enum rdma_nldev_print_type print_type)
 {
-	if (rd->json_output) {
-		jsonw_int_field(rd->jw, key_str, val);
-		return 0;
+	if (!rd->json_output) {
+		switch (print_type) {
+		case RDMA_NLDEV_PRINT_TYPE_UNSPEC:
+			return pr_out("%s %d ", key_str, val);
+		case RDMA_NLDEV_PRINT_TYPE_HEX:
+			return pr_out("%s 0x%x ", key_str, val);
+		default:
+			return -EINVAL;
+		}
 	}
-	switch (print_type) {
-	case RDMA_NLDEV_PRINT_TYPE_UNSPEC:
-		return pr_out("%s %d ", key_str, val);
-	case RDMA_NLDEV_PRINT_TYPE_HEX:
-		return pr_out("%s 0x%x ", key_str, val);
-	default:
-		return -EINVAL;
-	}
+	print_color_int(PRINT_JSON, COLOR_NONE, key_str, NULL, val);
+	return 0;
 }
 
 static int print_driver_u32(struct rd *rd, const char *key_str, uint32_t val,
 			      enum rdma_nldev_print_type print_type)
 {
-	if (rd->json_output) {
-		jsonw_int_field(rd->jw, key_str, val);
-		return 0;
+	if (!rd->json_output) {
+		switch (print_type) {
+		case RDMA_NLDEV_PRINT_TYPE_UNSPEC:
+			return pr_out("%s %u ", key_str, val);
+		case RDMA_NLDEV_PRINT_TYPE_HEX:
+			return pr_out("%s 0x%x ", key_str, val);
+		default:
+			return -EINVAL;
+		}
 	}
-	switch (print_type) {
-	case RDMA_NLDEV_PRINT_TYPE_UNSPEC:
-		return pr_out("%s %u ", key_str, val);
-	case RDMA_NLDEV_PRINT_TYPE_HEX:
-		return pr_out("%s 0x%x ", key_str, val);
-	default:
-		return -EINVAL;
-	}
+	print_color_int(PRINT_JSON, COLOR_NONE, key_str, NULL, val);
+	return 0;
 }
 
 static int print_driver_s64(struct rd *rd, const char *key_str, int64_t val,
 			      enum rdma_nldev_print_type print_type)
 {
-	if (rd->json_output) {
-		jsonw_int_field(rd->jw, key_str, val);
-		return 0;
+	if (!rd->json_output) {
+		switch (print_type) {
+		case RDMA_NLDEV_PRINT_TYPE_UNSPEC:
+			return pr_out("%s %" PRId64 " ", key_str, val);
+		case RDMA_NLDEV_PRINT_TYPE_HEX:
+			return pr_out("%s 0x%" PRIx64 " ", key_str, val);
+		default:
+			return -EINVAL;
+		}
 	}
-	switch (print_type) {
-	case RDMA_NLDEV_PRINT_TYPE_UNSPEC:
-		return pr_out("%s %" PRId64 " ", key_str, val);
-	case RDMA_NLDEV_PRINT_TYPE_HEX:
-		return pr_out("%s 0x%" PRIx64 " ", key_str, val);
-	default:
-		return -EINVAL;
-	}
+	print_color_int(PRINT_JSON, COLOR_NONE, key_str, NULL, val);
+	return 0;
 }
 
 static int print_driver_u64(struct rd *rd, const char *key_str, uint64_t val,
 			      enum rdma_nldev_print_type print_type)
 {
-	if (rd->json_output) {
-		jsonw_int_field(rd->jw, key_str, val);
-		return 0;
+	if (!rd->json_output) {
+		switch (print_type) {
+		case RDMA_NLDEV_PRINT_TYPE_UNSPEC:
+			return pr_out("%s %" PRIu64 " ", key_str, val);
+		case RDMA_NLDEV_PRINT_TYPE_HEX:
+			return pr_out("%s 0x%" PRIx64 " ", key_str, val);
+		default:
+			return -EINVAL;
+		}
 	}
-	switch (print_type) {
-	case RDMA_NLDEV_PRINT_TYPE_UNSPEC:
-		return pr_out("%s %" PRIu64 " ", key_str, val);
-	case RDMA_NLDEV_PRINT_TYPE_HEX:
-		return pr_out("%s 0x%" PRIx64 " ", key_str, val);
-	default:
-		return -EINVAL;
-	}
+	print_color_int(PRINT_JSON, COLOR_NONE, key_str, NULL, val);
+	return 0;
 }
 
 static int print_driver_entry(struct rd *rd, struct nlattr *key_attr,
 				struct nlattr *val_attr,
 				enum rdma_nldev_print_type print_type)
 {
-	const char *key_str = mnl_attr_get_str(key_attr);
 	int attr_type = nla_type(val_attr);
+	int ret = -EINVAL;
+	char *key_str;
+
+	if (asprintf(&key_str, "drv_%s", mnl_attr_get_str(key_attr)) == -1)
+		return -ENOMEM;
 
 	switch (attr_type) {
 	case RDMA_NLDEV_ATTR_DRIVER_STRING:
-		return print_driver_string(rd, key_str,
-				mnl_attr_get_str(val_attr));
+		ret = print_driver_string(rd, key_str,
+					  mnl_attr_get_str(val_attr));
+		break;
 	case RDMA_NLDEV_ATTR_DRIVER_S32:
-		return print_driver_s32(rd, key_str,
-				mnl_attr_get_u32(val_attr), print_type);
+		ret = print_driver_s32(rd, key_str, mnl_attr_get_u32(val_attr),
+				       print_type);
+		break;
 	case RDMA_NLDEV_ATTR_DRIVER_U32:
-		return print_driver_u32(rd, key_str,
-				mnl_attr_get_u32(val_attr), print_type);
+		ret = print_driver_u32(rd, key_str, mnl_attr_get_u32(val_attr),
+				       print_type);
+		break;
 	case RDMA_NLDEV_ATTR_DRIVER_S64:
-		return print_driver_s64(rd, key_str,
-				mnl_attr_get_u64(val_attr), print_type);
+		ret = print_driver_s64(rd, key_str, mnl_attr_get_u64(val_attr),
+				       print_type);
+		break;
 	case RDMA_NLDEV_ATTR_DRIVER_U64:
-		return print_driver_u64(rd, key_str,
-				mnl_attr_get_u64(val_attr), print_type);
+		ret = print_driver_u64(rd, key_str, mnl_attr_get_u64(val_attr),
+				       print_type);
+		break;
 	}
-	return -EINVAL;
+	free(key_str);
+	return ret;
+}
+
+void print_raw_data(struct rd *rd, struct nlattr **nla_line)
+{
+	uint8_t *data;
+	uint32_t len;
+	int i = 0;
+
+	if (!rd->show_raw)
+		return;
+
+	len = mnl_attr_get_payload_len(nla_line[RDMA_NLDEV_ATTR_RES_RAW]);
+	data = mnl_attr_get_payload(nla_line[RDMA_NLDEV_ATTR_RES_RAW]);
+	open_json_array(PRINT_JSON, "data");
+	while (i < len) {
+		print_color_uint(PRINT_ANY, COLOR_NONE, NULL, "%d", data[i]);
+		i++;
+	}
+	close_json_array(PRINT_ANY, ">");
 }
 
 void print_driver_table(struct rd *rd, struct nlattr *tb)

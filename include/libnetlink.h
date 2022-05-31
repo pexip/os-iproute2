@@ -23,6 +23,7 @@ struct rtnl_handle {
 	FILE		       *dump_fp;
 #define RTNL_HANDLE_F_LISTEN_ALL_NSID		0x01
 #define RTNL_HANDLE_F_SUPPRESS_NLERR		0x02
+#define RTNL_HANDLE_F_STRICT_CHK		0x04
 	int			flags;
 };
 
@@ -44,18 +45,25 @@ int rtnl_open(struct rtnl_handle *rth, unsigned int subscriptions)
 int rtnl_open_byproto(struct rtnl_handle *rth, unsigned int subscriptions,
 			     int protocol)
 	__attribute__((warn_unused_result));
-
+int rtnl_add_nl_group(struct rtnl_handle *rth, unsigned int group)
+	__attribute__((warn_unused_result));
 void rtnl_close(struct rtnl_handle *rth);
+void rtnl_set_strict_dump(struct rtnl_handle *rth);
 
-int rtnl_addrdump_req(struct rtnl_handle *rth, int family)
+typedef int (*req_filter_fn_t)(struct nlmsghdr *nlh, int reqlen);
+
+int rtnl_addrdump_req(struct rtnl_handle *rth, int family,
+		      req_filter_fn_t filter_fn)
 	__attribute__((warn_unused_result));
 int rtnl_addrlbldump_req(struct rtnl_handle *rth, int family)
 	__attribute__((warn_unused_result));
-int rtnl_routedump_req(struct rtnl_handle *rth, int family)
+int rtnl_routedump_req(struct rtnl_handle *rth, int family,
+		       req_filter_fn_t filter_fn)
 	__attribute__((warn_unused_result));
 int rtnl_ruledump_req(struct rtnl_handle *rth, int family)
 	__attribute__((warn_unused_result));
-int rtnl_neighdump_req(struct rtnl_handle *rth, int family)
+int rtnl_neighdump_req(struct rtnl_handle *rth, int family,
+		       req_filter_fn_t filter_fn)
 	__attribute__((warn_unused_result));
 int rtnl_neightbldump_req(struct rtnl_handle *rth, int family)
 	__attribute__((warn_unused_result));
@@ -63,18 +71,20 @@ int rtnl_mdbdump_req(struct rtnl_handle *rth, int family)
 	__attribute__((warn_unused_result));
 int rtnl_netconfdump_req(struct rtnl_handle *rth, int family)
 	__attribute__((warn_unused_result));
-int rtnl_nsiddump_req(struct rtnl_handle *rth, int family)
-	__attribute__((warn_unused_result));
 
 int rtnl_linkdump_req(struct rtnl_handle *rth, int fam)
 	__attribute__((warn_unused_result));
 int rtnl_linkdump_req_filter(struct rtnl_handle *rth, int fam, __u32 filt_mask)
 	__attribute__((warn_unused_result));
 
-typedef int (*req_filter_fn_t)(struct nlmsghdr *nlh, int reqlen);
-
 int rtnl_linkdump_req_filter_fn(struct rtnl_handle *rth, int fam,
 				req_filter_fn_t fn)
+	__attribute__((warn_unused_result));
+int rtnl_fdb_linkdump_req_filter_fn(struct rtnl_handle *rth,
+				    req_filter_fn_t filter_fn)
+	__attribute__((warn_unused_result));
+int rtnl_nsiddump_req_filter_fn(struct rtnl_handle *rth, int family,
+				req_filter_fn_t filter_fn)
 	__attribute__((warn_unused_result));
 int rtnl_statsdump_req_filter(struct rtnl_handle *rth, int fam, __u32 filt_mask)
 	__attribute__((warn_unused_result));
@@ -82,6 +92,10 @@ int rtnl_dump_request(struct rtnl_handle *rth, int type, void *req,
 			     int len)
 	__attribute__((warn_unused_result));
 int rtnl_dump_request_n(struct rtnl_handle *rth, struct nlmsghdr *n)
+	__attribute__((warn_unused_result));
+
+int rtnl_nexthopdump_req(struct rtnl_handle *rth, int family,
+			 req_filter_fn_t filter_fn)
 	__attribute__((warn_unused_result));
 
 struct rtnl_ctrl_data {
@@ -121,6 +135,7 @@ int rtnl_send(struct rtnl_handle *rth, const void *buf, int)
 int rtnl_send_check(struct rtnl_handle *rth, const void *buf, int)
 	__attribute__((warn_unused_result));
 int nl_dump_ext_ack(const struct nlmsghdr *nlh, nl_ext_ack_fn_t errfn);
+int nl_dump_ext_ack_done(const struct nlmsghdr *nlh, int error);
 
 int addattr(struct nlmsghdr *n, int maxlen, int type);
 int addattr8(struct nlmsghdr *n, int maxlen, int type, __u8 data);
@@ -158,7 +173,8 @@ int rta_nest_end(struct rtattr *rta, struct rtattr *nest);
 				    RTA_ALIGN((rta)->rta_len)))
 
 #define parse_rtattr_nested(tb, max, rta) \
-	(parse_rtattr((tb), (max), RTA_DATA(rta), RTA_PAYLOAD(rta)))
+	(parse_rtattr_flags((tb), (max), RTA_DATA(rta), RTA_PAYLOAD(rta), \
+			    NLA_F_NESTED))
 
 #define parse_rtattr_one_nested(type, rta) \
 	(parse_rtattr_one(type, RTA_DATA(rta), RTA_PAYLOAD(rta)))
@@ -267,5 +283,12 @@ int rtnl_from_file(FILE *, rtnl_listen_filter_t handler,
 /* User defined nlmsg_type which is used mostly for logging netlink
  * messages from dump file */
 #define NLMSG_TSTAMP	15
+
+#define rtattr_for_each_nested(attr, nest) \
+	for ((attr) = (void *)RTA_DATA(nest); \
+	     RTA_OK(attr, RTA_PAYLOAD(nest) - ((char *)(attr) - (char *)RTA_DATA((nest)))); \
+	     (attr) = RTA_TAIL((attr)))
+
+void nl_print_policy(const struct rtattr *attr, FILE *fp);
 
 #endif /* __LIBNETLINK_H__ */

@@ -27,6 +27,8 @@
 
 #define NAME_MAX_LEN 512
 
+int numeric;
+
 struct rtnl_hash_entry {
 	struct rtnl_hash_entry	*next;
 	const char		*name;
@@ -118,27 +120,28 @@ static void rtnl_tab_initialize(const char *file, char **tab, int size)
 }
 
 static char *rtnl_rtprot_tab[256] = {
-	[RTPROT_UNSPEC]   = "unspec",
-	[RTPROT_REDIRECT] = "redirect",
-	[RTPROT_KERNEL]	  = "kernel",
-	[RTPROT_BOOT]	  = "boot",
-	[RTPROT_STATIC]	  = "static",
+	[RTPROT_UNSPEC]	    = "unspec",
+	[RTPROT_REDIRECT]   = "redirect",
+	[RTPROT_KERNEL]	    = "kernel",
+	[RTPROT_BOOT]	    = "boot",
+	[RTPROT_STATIC]	    = "static",
 
-	[RTPROT_GATED]	  = "gated",
-	[RTPROT_RA]	  = "ra",
-	[RTPROT_MRT]	  = "mrt",
-	[RTPROT_ZEBRA]	  = "zebra",
-	[RTPROT_BIRD]	  = "bird",
-	[RTPROT_BABEL]	  = "babel",
-	[RTPROT_DNROUTED] = "dnrouted",
-	[RTPROT_XORP]	  = "xorp",
-	[RTPROT_NTK]	  = "ntk",
-	[RTPROT_DHCP]	  = "dhcp",
-	[RTPROT_BGP]	  = "bgp",
-	[RTPROT_ISIS]	  = "isis",
-	[RTPROT_OSPF]	  = "ospf",
-	[RTPROT_RIP]	  = "rip",
-	[RTPROT_EIGRP]	  = "eigrp",
+	[RTPROT_GATED]	    = "gated",
+	[RTPROT_RA]	    = "ra",
+	[RTPROT_MRT]	    = "mrt",
+	[RTPROT_ZEBRA]	    = "zebra",
+	[RTPROT_BIRD]	    = "bird",
+	[RTPROT_BABEL]	    = "babel",
+	[RTPROT_DNROUTED]   = "dnrouted",
+	[RTPROT_XORP]	    = "xorp",
+	[RTPROT_NTK]	    = "ntk",
+	[RTPROT_DHCP]	    = "dhcp",
+	[RTPROT_KEEPALIVED] = "keepalived",
+	[RTPROT_BGP]	    = "bgp",
+	[RTPROT_ISIS]	    = "isis",
+	[RTPROT_OSPF]	    = "ospf",
+	[RTPROT_RIP]	    = "rip",
+	[RTPROT_EIGRP]	    = "eigrp",
 };
 
 
@@ -180,7 +183,7 @@ static void rtnl_rtprot_initialize(void)
 
 const char *rtnl_rtprot_n2a(int id, char *buf, int len)
 {
-	if (id < 0 || id >= 256) {
+	if (id < 0 || id >= 256 || numeric) {
 		snprintf(buf, len, "%u", id);
 		return buf;
 	}
@@ -246,7 +249,7 @@ static void rtnl_rtscope_initialize(void)
 
 const char *rtnl_rtscope_n2a(int id, char *buf, int len)
 {
-	if (id < 0 || id >= 256) {
+	if (id < 0 || id >= 256 || numeric) {
 		snprintf(buf, len, "%d", id);
 		return buf;
 	}
@@ -311,7 +314,7 @@ static void rtnl_rtrealm_initialize(void)
 
 const char *rtnl_rtrealm_n2a(int id, char *buf, int len)
 {
-	if (id < 0 || id >= 256) {
+	if (id < 0 || id >= 256 || numeric) {
 		snprintf(buf, len, "%d", id);
 		return buf;
 	}
@@ -419,7 +422,7 @@ const char *rtnl_rttable_n2a(__u32 id, char *buf, int len)
 	entry = rtnl_rttable_hash[id & 255];
 	while (entry && entry->id != id)
 		entry = entry->next;
-	if (entry)
+	if (!numeric && entry)
 		return entry->name;
 	snprintf(buf, len, "%u", id);
 	return buf;
@@ -484,7 +487,7 @@ const char *rtnl_dsfield_n2a(int id, char *buf, int len)
 		if (!rtnl_rtdsfield_init)
 			rtnl_rtdsfield_initialize();
 	}
-	if (rtnl_rtdsfield_tab[id])
+	if (!numeric && rtnl_rtdsfield_tab[id])
 		return rtnl_rtdsfield_tab[id];
 	snprintf(buf, len, "0x%02x", id);
 	return buf;
@@ -584,7 +587,7 @@ const char *rtnl_group_n2a(int id, char *buf, int len)
 	if (!rtnl_group_init)
 		rtnl_group_initialize();
 
-	for (i = 0; i < 256; i++) {
+	for (i = 0; !numeric && i < 256; i++) {
 		entry = rtnl_group_hash[i];
 
 		while (entry) {
@@ -633,8 +636,8 @@ static void nl_proto_initialize(void)
 
 const char *nl_proto_n2a(int id, char *buf, int len)
 {
-	if (id < 0 || id >= 256) {
-		snprintf(buf, len, "%u", id);
+	if (id < 0 || id >= 256 || numeric) {
+		snprintf(buf, len, "%d", id);
 		return buf;
 	}
 
@@ -675,6 +678,98 @@ int nl_proto_a2n(__u32 *id, const char *arg)
 
 	res = strtoul(arg, &end, 0);
 	if (!end || end == arg || *end || res > 255)
+		return -1;
+	*id = res;
+	return 0;
+}
+
+#define PROTODOWN_REASON_NUM_BITS 32
+static char *protodown_reason_tab[PROTODOWN_REASON_NUM_BITS] = {
+};
+
+static int protodown_reason_init;
+
+static void protodown_reason_initialize(void)
+{
+	struct dirent *de;
+	DIR *d;
+
+	protodown_reason_init = 1;
+
+	d = opendir(CONFDIR "/protodown_reasons.d");
+	if (!d)
+		return;
+
+	while ((de = readdir(d)) != NULL) {
+		char path[PATH_MAX];
+		size_t len;
+
+		if (*de->d_name == '.')
+			continue;
+
+		/* only consider filenames ending in '.conf' */
+		len = strlen(de->d_name);
+		if (len <= 5)
+			continue;
+		if (strcmp(de->d_name + len - 5, ".conf"))
+			continue;
+
+		snprintf(path, sizeof(path), CONFDIR "/protodown_reasons.d/%s",
+			 de->d_name);
+		rtnl_tab_initialize(path, protodown_reason_tab,
+				    PROTODOWN_REASON_NUM_BITS);
+	}
+	closedir(d);
+}
+
+int protodown_reason_n2a(int id, char *buf, int len)
+{
+	if (id < 0 || id >= PROTODOWN_REASON_NUM_BITS)
+		return -1;
+
+	if (numeric) {
+		snprintf(buf, len, "%d", id);
+		return 0;
+	}
+
+	if (!protodown_reason_init)
+		protodown_reason_initialize();
+
+	if (protodown_reason_tab[id])
+		snprintf(buf, len, "%s", protodown_reason_tab[id]);
+	else
+		snprintf(buf, len, "%d", id);
+
+	return 0;
+}
+
+int protodown_reason_a2n(__u32 *id, const char *arg)
+{
+	static char *cache;
+	static unsigned long res;
+	char *end;
+	int i;
+
+	if (cache && strcmp(cache, arg) == 0) {
+		*id = res;
+		return 0;
+	}
+
+	if (!protodown_reason_init)
+		protodown_reason_initialize();
+
+	for (i = 0; i < PROTODOWN_REASON_NUM_BITS; i++) {
+		if (protodown_reason_tab[i] &&
+		    strcmp(protodown_reason_tab[i], arg) == 0) {
+			cache = protodown_reason_tab[i];
+			res = i;
+			*id = res;
+			return 0;
+		}
+	}
+
+	res = strtoul(arg, &end, 0);
+	if (!end || end == arg || *end || res >= PROTODOWN_REASON_NUM_BITS)
 		return -1;
 	*id = res;
 	return 0;

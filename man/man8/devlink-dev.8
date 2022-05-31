@@ -26,42 +26,60 @@ devlink-dev \- devlink device configuration
 .B devlink dev help
 
 .ti -8
-.BR "devlink dev eswitch set"
-.IR DEV
-.RI "[ "
+.B devlink dev eswitch set
+.I DEV
+[
 .BR mode " { " legacy " | " switchdev " } "
-.RI "]"
-.RI "[ "
+] [
 .BR inline-mode " { " none " | " link " | " network " | " transport " } "
-.RI "]"
-.RI "[ "
-.BR encap " { " disable " | " enable " } "
-.RI "]"
+] [
+.BR encap-mode " { " none " | " basic " } "
+]
 
 .ti -8
-.BR "devlink dev eswitch show"
-.IR DEV
+.B devlink dev eswitch show
+.I DEV
 
 .ti -8
-.BR "devlink dev param set"
-.IR DEV
-.BR name
-.IR PARAMETER
-.BR value
-.IR VALUE
+.B devlink dev param set
+.I DEV
+.B name
+.I PARAMETER
+.B value
+.I VALUE
 .BR cmode " { " runtime " | " driverinit " | " permanent " } "
 
 .ti -8
-.BR "devlink dev param show"
-.RI "[ "
-.IR DEV
-.BR name
-.IR PARAMETER
-.RI "]"
+.B devlink dev param show
+[
+.I DEV
+.B name
+.I PARAMETER
+]
 
 .ti -8
-.BR "devlink dev reload"
-.IR DEV
+.B devlink dev reload
+.I DEV
+[
+.B netns
+.RI "{ " PID " | " NAME " | " ID " }"
+]
+
+.ti -8
+.B devlink dev info
+[
+.I DEV
+]
+
+.ti -8
+.B devlink dev flash
+.I DEV
+.B file
+.I PATH
+[
+.B target
+.I ID
+]
 
 .SH "DESCRIPTION"
 .SS devlink dev show - display devlink device attributes
@@ -106,13 +124,13 @@ Some HWs need the VF driver to put part of the packet headers on the TX descript
 - L4 mode
 
 .TP
-.BR encap " { " disable " | " enable " } "
+.BR encap-mode " { " none " | " basic " } "
 Set eswitch encapsulation support
 
-.I disable
+.I none
 - Disable encapsulation support
 
-.I enable
+.I basic
 - Enable encapsulation support
 
 .SS devlink dev param set  - set new value to devlink device configuration parameter
@@ -140,8 +158,8 @@ Configuration mode in which the new value is set.
 
 .SS devlink dev param show - display devlink device supported configuration parameters attributes
 
-.BR name
-.IR PARAMETER
+.B name
+.I PARAMETER
 Specify parameter name to show.
 If this argument is omitted all parameters supported by devlink devices are listed.
 
@@ -150,6 +168,52 @@ If this argument is omitted all parameters supported by devlink devices are list
 .PP
 .I "DEV"
 - Specifies the devlink device to reload.
+
+.B netns
+.RI { " PID " | " NAME " | " ID " }
+- Specifies the network namespace to reload into, either by pid, name or id.
+
+.SS devlink dev info - display device information.
+Display device information provided by the driver. This command can be used
+to query versions of the hardware components or device components which
+can't be updated (
+.I fixed
+) as well as device firmware which can be updated. For firmware components
+.I running
+displays the versions of firmware currently loaded into the device, while
+.I stored
+reports the versions in device's flash.
+.I Running
+and
+.I stored
+versions may differ after flash has been updated, but before reboot.
+
+.PP
+.I "DEV"
+- specifies the devlink device to show.
+If this argument is omitted all devices are listed.
+
+.SS devlink dev flash - write device's non-volatile memory.
+
+.PP
+.I "DEV"
+- specifies the devlink device to write to.
+
+.B file
+.I PATH
+- Path to the file which will be written into device's flash. The path needs
+to be relative to one of the directories searched by the kernel firmware loaded,
+such as /lib/firmware.
+
+.B component
+.I NAME
+- If device stores multiple firmware images in non-volatile memory, this
+parameter may be used to indicate which firmware image should be written.
+The value of
+.I NAME
+should match the component names from
+.B "devlink dev info"
+and may be driver-dependent.
 
 .SH "EXAMPLES"
 .PP
@@ -186,6 +250,18 @@ Sets the parameter internal_error_reset of specified devlink device to true.
 devlink dev reload pci/0000:01:00.0
 .RS 4
 Performs hot reload of specified devlink device.
+.RE
+.PP
+devlink dev flash pci/0000:01:00.0 file firmware.bin
+.RS 4
+Flashes the specified devlink device with provided firmware file name. If the driver supports it, user gets updates about the flash status. For example:
+.br
+Preparing to flash
+.br
+Flashing 100%
+.br
+Flashing done
+.RE
 
 .SH SEE ALSO
 .BR devlink (8),

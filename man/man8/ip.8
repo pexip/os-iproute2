@@ -22,7 +22,7 @@ ip \- show / manipulate routing, network devices, interfaces and tunnels
 .BR link " | " address " | " addrlabel " | " route " | " rule " | " neigh " | "\
  ntable " | " tunnel " | " tuntap " | " maddress " | "  mroute " | " mrule " | "\
  monitor " | " xfrm " | " netns " | "  l2tp " | "  tcp_metrics " | " token " | "\
- macsec " }"
+ macsec " | " vrf " | " mptcp " }"
 .sp
 
 .ti -8
@@ -34,7 +34,7 @@ ip \- show / manipulate routing, network devices, interfaces and tunnels
 \fB\-r\fR[\fIesolve\fR] |
 \fB\-iec\fR |
 \fB\-f\fR[\fIamily\fR] {
-.BR inet " | " inet6 " | " ipx " | " dnet " | " link " } | "
+.BR inet " | " inet6 " | " link " } | "
 \fB-4\fR |
 \fB-6\fR |
 \fB-I\fR |
@@ -47,6 +47,7 @@ ip \- show / manipulate routing, network devices, interfaces and tunnels
 \fB\-t\fR[\fIimestamp\fR] |
 \fB\-ts\fR[\fIhort\fR] |
 \fB\-n\fR[\fIetns\fR] name |
+\fB\-N\fR[\fIumeric\fR] |
 \fB\-a\fR[\fIll\fR] |
 \fB\-c\fR[\fIolor\fR] |
 \fB\-br\fR[\fIief\fR] |
@@ -72,8 +73,9 @@ First failure will cause termination of ip.
 
 .TP
 .BR "\-force"
-Don't terminate ip on errors in batch mode.
-If there were any errors during execution of the commands, the application return code will be non zero.
+Don't terminate ip on errors in batch mode.  If there were any errors
+during execution of the commands, the application return code will be
+non zero.
 
 .TP
 .BR "\-s" , " \-stats" , " \-statistics"
@@ -93,8 +95,9 @@ Zero (0) means loop until all addresses are removed.
 
 .TP
 .BR "\-f" , " \-family " <FAMILY>
-Specifies the protocol family to use. The protocol family identifier can be one of
-.BR "inet" , " inet6" , " bridge" , " ipx" , " dnet" , " mpls"
+Specifies the protocol family to use. The protocol family identifier
+can be one of
+.BR "inet" , " inet6" , " bridge" ,  " mpls"
 or
 .BR link .
 If this option is not present,
@@ -124,16 +127,6 @@ shortcut for
 .B \-B
 shortcut for
 .BR "\-family bridge" .
-
-.TP
-.B \-D
-shortcut for
-.BR "\-family decnet" .
-
-.TP
-.B \-I
-shortcut for
-.BR "\-family ipx" .
 
 .TP
 .B \-M
@@ -183,8 +176,14 @@ to
 .BR help " }"
 
 .TP
+.BR "\-N" , " \-Numeric"
+Print the number of protocol, scope, dsfield, etc directly instead of
+converting it to human readable name.
+
+.TP
 .BR "\-a" , " \-all"
-executes specified command over all objects, it depends if command supports this option.
+executes specified command over all objects, it depends if command
+supports this option.
 
 .TP
 .BR \-c [ color ][ = { always | auto | never }
@@ -192,12 +191,19 @@ Configure color output. If parameter is omitted or
 .BR always ,
 color output is enabled regardless of stdout state. If parameter is
 .BR auto ,
-stdout is checked to be a terminal before enabling color output. If parameter is
+stdout is checked to be a terminal before enabling color output. If
+parameter is
 .BR never ,
 color output is disabled. If specified multiple times, the last one takes
 precedence. This flag is ignored if
 .B \-json
 is also given.
+
+Used color palette can be influenced by
+.BR COLORFGBG
+environment variable
+(see
+.BR ENVIRONMENT ).
 
 .TP
 .BR "\-t" , " \-timestamp"
@@ -219,7 +225,8 @@ print human readable rates in IEC units (e.g. 1Ki = 1024).
 
 .TP
 .BR "\-br" , " \-brief"
-Print only basic information in a tabular format for better readability. This option is currently only supported by
+Print only basic information in a tabular format for better
+readability. This option is currently only supported by
 .BR "ip addr show " and " ip link show " commands.
 
 .TP
@@ -228,8 +235,9 @@ Output results in JavaScript Object Notation (JSON).
 
 .TP
 .BR "\-p", " \-pretty"
-The default JSON format is compact and more efficient to parse but hard for most users to read.
-This flag adds indentation for readability.
+The default JSON format is compact and more efficient to parse but
+hard for most users to read.  This flag adds indentation for
+readability.
 
 .SH IP - COMMAND SYNTAX
 
@@ -259,6 +267,10 @@ This flag adds indentation for readability.
 .TP
 .B monitor
 - watch for netlink messages.
+
+.TP
+.B mptcp
+- manage MPTCP path manager.
 
 .TP
 .B mroute
@@ -305,6 +317,10 @@ This flag adds indentation for readability.
 - manage TUN/TAP devices.
 
 .TP
+.B vrf
+- manage virtual routing and forwarding devices.
+
+.TP
 .B xfrm
 - manage IPSec policies.
 
@@ -340,6 +356,18 @@ Usually it is
 or, if the objects of this class cannot be listed,
 .BR "help" .
 
+.SH ENVIRONMENT
+.TP
+.B COLORFGBG
+If set, it's value is used for detection whether background is dark or
+light and use contrast colors for it.
+
+COLORFGBG environment variable usually contains either two or three
+values separated by semicolons; we want the last value in either case.
+If this value is 0-6 or 8, chose colors suitable for dark background:
+
+COLORFGBG=";0" ip -c a
+
 .SH EXIT STATUS
 Exit status is 0 if command was successful, and 1 if there is a syntax error.
 If an error was reported by the kernel exit status is 2.
@@ -362,7 +390,6 @@ Bring up interface x.
 .RE
 .PP
 ip link set x down
-.RE
 .RS 4
 Bring down interface x.
 .RE
@@ -382,6 +409,7 @@ was written by Alexey N. Kuznetsov and added in Linux 2.2.
 .BR ip-link (8),
 .BR ip-maddress (8),
 .BR ip-monitor (8),
+.BR ip-mptcp (8),
 .BR ip-mroute (8),
 .BR ip-neighbour (8),
 .BR ip-netns (8),
@@ -391,6 +419,7 @@ was written by Alexey N. Kuznetsov and added in Linux 2.2.
 .BR ip-tcp_metrics (8),
 .BR ip-token (8),
 .BR ip-tunnel (8),
+.BR ip-vrf (8),
 .BR ip-xfrm (8)
 .br
 .RB "IP Command reference " ip-cref.ps
