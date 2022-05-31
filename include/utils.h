@@ -34,6 +34,7 @@ extern int timestamp_short;
 extern const char * _SL_;
 extern int max_flush_loops;
 extern int batch_mode;
+extern int numeric;
 extern bool do_all;
 
 #ifndef CONFDIR
@@ -116,13 +117,6 @@ struct dn_naddr
         unsigned char a_addr[DN_MAXADDL];
 };
 
-#define IPX_NODE_LEN 6
-
-struct ipx_addr {
-	u_int32_t ipx_net;
-	u_int8_t  ipx_node[IPX_NODE_LEN];
-};
-
 #ifndef AF_MPLS
 # define AF_MPLS 28
 #endif
@@ -132,6 +126,14 @@ struct ipx_addr {
 
 #ifndef CLOCK_TAI
 # define CLOCK_TAI 11
+#endif
+
+#ifndef AF_XDP
+# define AF_XDP 44
+# if AF_MAX < 45
+#  undef AF_MAX
+#  define AF_MAX 45
+# endif
 #endif
 
 __u32 get_addr32(const char *name);
@@ -144,7 +146,6 @@ int get_addr_rta(inet_prefix *dst, const struct rtattr *rta, int family);
 int get_addr_ila(__u64 *val, const char *arg);
 
 int read_prop(const char *dev, char *prop, long *value);
-int parse_percent(double *val, const char *str);
 int get_hex(char c);
 int get_integer(int *val, const char *arg, int base);
 int get_unsigned(unsigned *val, const char *arg, int base);
@@ -195,17 +196,12 @@ void duparg(const char *, const char *) __attribute__((noreturn));
 void duparg2(const char *, const char *) __attribute__((noreturn));
 int nodev(const char *dev);
 int check_ifname(const char *);
+int check_altifname(const char *name);
 int get_ifname(char *, const char *);
 const char *get_ifname_rta(int ifindex, const struct rtattr *rta);
-int matches(const char *arg, const char *pattern);
+bool matches(const char *prefix, const char *string);
 int inet_addr_match(const inet_prefix *a, const inet_prefix *b, int bits);
 int inet_addr_match_rta(const inet_prefix *m, const struct rtattr *rta);
-
-const char *dnet_ntop(int af, const void *addr, char *str, size_t len);
-int dnet_pton(int af, const char *src, void *addr);
-
-const char *ipx_ntop(int af, const void *addr, char *str, size_t len);
-int ipx_pton(int af, const char *src, void *addr);
 
 const char *mpls_ntop(int af, const void *addr, char *str, size_t len);
 int mpls_pton(int af, const char *src, void *addr, size_t alen);
@@ -299,16 +295,16 @@ extern int cmdlineno;
 ssize_t getcmdline(char **line, size_t *len, FILE *in);
 int makeargs(char *line, char *argv[], int maxargs);
 
-int do_each_netns(int (*func)(char *nsname, void *arg), void *arg,
-		bool show_label);
-
 char *int_to_str(int val, char *buf);
 int get_guid(__u64 *guid, const char *arg);
 int get_real_family(int rtm_type, int rtm_family);
 
-int cmd_exec(const char *cmd, char **argv, bool do_fork);
+int cmd_exec(const char *cmd, char **argv, bool do_fork,
+	     int (*setup)(void *), void *arg);
 int make_path(const char *path, mode_t mode);
-char *find_cgroup2_mount(void);
+char *find_cgroup2_mount(bool do_mount);
+__u64 get_cgroup2_id(const char *path);
+char *get_cgroup2_path(__u64 id, bool full);
 int get_command_name(const char *pid, char *comm, size_t len);
 
 int get_rtnl_link_stats_rta(struct rtnl_link_stats64 *stats64,

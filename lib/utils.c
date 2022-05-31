@@ -101,22 +101,6 @@ out:
 	return -1;
 }
 
-/* Parse a percent e.g: '30%'
- * return: 0 = ok, -1 = error, 1 = out of range
- */
-int parse_percent(double *val, const char *str)
-{
-	char *p;
-
-	*val = strtod(str, &p) / 100.;
-	if (*val == HUGE_VALF || *val == HUGE_VALL)
-		return 1;
-	if (*p && strcmp(p, "%"))
-		return -1;
-
-	return 0;
-}
-
 int get_hex(char c)
 {
 	if (c >= 'A' && c <= 'F')
@@ -184,7 +168,7 @@ static int get_netmask(unsigned int *val, const char *arg, int base)
 	if (!get_unsigned(val, arg, base))
 		return 0;
 
-	/* try coverting dotted quad to CIDR */
+	/* try converting dotted quad to CIDR */
 	if (!get_addr_1(&addr, arg, AF_INET) && addr.family == AF_INET) {
 		int b = mask2bits(addr.data[0]);
 
@@ -390,7 +374,7 @@ int get_u8(__u8 *val, const char *arg, int base)
 
 int get_s64(__s64 *val, const char *arg, int base)
 {
-	long res;
+	long long res;
 	char *ptr;
 
 	errno = 0;
@@ -596,18 +580,6 @@ static int __get_addr_1(inet_prefix *addr, const char *name, int family)
 		if (inet_pton(AF_INET6, name, addr->data) <= 0)
 			return -1;
 		addr->bytelen = 16;
-		addr->bitlen = -1;
-		return 0;
-	}
-
-	if (family == AF_DECnet) {
-		struct dn_naddr dna;
-
-		addr->family = AF_DECnet;
-		if (dnet_pton(AF_DECnet, name, &dna) <= 0)
-			return -1;
-		memcpy(addr->data, dna.a_addr, 2);
-		addr->bytelen = 2;
 		addr->bitlen = -1;
 		return 0;
 	}
@@ -852,20 +824,29 @@ int nodev(const char *dev)
 	return -1;
 }
 
-int check_ifname(const char *name)
+static int __check_ifname(const char *name)
 {
-	/* These checks mimic kernel checks in dev_valid_name */
 	if (*name == '\0')
 		return -1;
-	if (strlen(name) >= IFNAMSIZ)
-		return -1;
-
 	while (*name) {
 		if (*name == '/' || isspace(*name))
 			return -1;
 		++name;
 	}
 	return 0;
+}
+
+int check_ifname(const char *name)
+{
+	/* These checks mimic kernel checks in dev_valid_name */
+	if (strlen(name) >= IFNAMSIZ)
+		return -1;
+	return __check_ifname(name);
+}
+
+int check_altifname(const char *name)
+{
+	return __check_ifname(name);
 }
 
 /* buf is assumed to be IFNAMSIZ */
@@ -899,13 +880,18 @@ const char *get_ifname_rta(int ifindex, const struct rtattr *rta)
 	return name;
 }
 
-int matches(const char *cmd, const char *pattern)
+/* Returns false if 'prefix' is a not empty prefix of 'string'.
+ */
+bool matches(const char *prefix, const char *string)
 {
-	int len = strlen(cmd);
+	if (!*prefix)
+		return true;
+	while (*string && *prefix == *string) {
+		prefix++;
+		string++;
+	}
 
-	if (len > strlen(pattern))
-		return -1;
-	return memcmp(pattern, cmd, len);
+	return !!*prefix;
 }
 
 int inet_addr_match(const inet_prefix *a, const inet_prefix *b, int bits)
@@ -1000,15 +986,6 @@ const char *rt_addr_n2a_r(int af, int len,
 		return inet_ntop(af, addr, buf, buflen);
 	case AF_MPLS:
 		return mpls_ntop(af, addr, buf, buflen);
-	case AF_IPX:
-		return ipx_ntop(af, addr, buf, buflen);
-	case AF_DECnet:
-	{
-		struct dn_naddr dna = { 2, { 0, 0, } };
-
-		memcpy(dna.a_addr, addr, 2);
-		return dnet_ntop(af, &dna, buf, buflen);
-	}
 	case AF_PACKET:
 		return ll_addr_n2a(addr, len, ARPHRD_VOID, buf, buflen);
 	case AF_BRIDGE:
@@ -1050,8 +1027,6 @@ int read_family(const char *name)
 		family = AF_INET;
 	else if (strcmp(name, "inet6") == 0)
 		family = AF_INET6;
-	else if (strcmp(name, "dnet") == 0)
-		family = AF_DECnet;
 	else if (strcmp(name, "link") == 0)
 		family = AF_PACKET;
 	else if (strcmp(name, "ipx") == 0)
@@ -1069,8 +1044,6 @@ const char *family_name(int family)
 		return "inet";
 	if (family == AF_INET6)
 		return "inet6";
-	if (family == AF_DECnet)
-		return "dnet";
 	if (family == AF_PACKET)
 		return "link";
 	if (family == AF_IPX)
@@ -1443,33 +1416,6 @@ void print_nlmsg_timestamp(FILE *fp, const struct nlmsghdr *n)
 	fprintf(fp, "Timestamp: %s %lu us\n", tstr, usecs);
 }
 
-static int on_netns(char *nsname, void *arg)
-{
-	struct netns_func *f = arg;
-
-	if (netns_switch(nsname))
-		return -1;
-
-	return f->func(nsname, f->arg);
-}
-
-static int on_netns_label(char *nsname, void *arg)
-{
-	printf("\nnetns: %s\n", nsname);
-	return on_netns(nsname, arg);
-}
-
-int do_each_netns(int (*func)(char *nsname, void *arg), void *arg,
-		bool show_label)
-{
-	struct netns_func nsf = { .func = func, .arg = arg };
-
-	if (show_label)
-		return netns_foreach(on_netns_label, &nsf);
-
-	return netns_foreach(on_netns, &nsf);
-}
-
 char *int_to_str(int val, char *buf)
 {
 	sprintf(buf, "%d", val);
@@ -1505,7 +1451,7 @@ int get_guid(__u64 *guid, const char *arg)
 		if (tmp > 255)
 			return -1;
 
-		 *guid |= tmp << (56 - 8 * i);
+		*guid |= tmp << (56 - 8 * i);
 	}
 
 	return 0;
@@ -1682,9 +1628,9 @@ static void print_time(char *buf, int len, __u32 time)
 	double tmp = time;
 
 	if (tmp >= TIME_UNITS_PER_SEC)
-		snprintf(buf, len, "%.1fs", tmp/TIME_UNITS_PER_SEC);
+		snprintf(buf, len, "%.3gs", tmp/TIME_UNITS_PER_SEC);
 	else if (tmp >= TIME_UNITS_PER_SEC/1000)
-		snprintf(buf, len, "%.1fms", tmp/(TIME_UNITS_PER_SEC/1000));
+		snprintf(buf, len, "%.3gms", tmp/(TIME_UNITS_PER_SEC/1000));
 	else
 		snprintf(buf, len, "%uus", time);
 }
@@ -1735,11 +1681,11 @@ static void print_time64(char *buf, int len, __s64 time)
 	double nsec = time;
 
 	if (time >= NSEC_PER_SEC)
-		snprintf(buf, len, "%.3fs", nsec/NSEC_PER_SEC);
+		snprintf(buf, len, "%.3gs", nsec/NSEC_PER_SEC);
 	else if (time >= NSEC_PER_MSEC)
-		snprintf(buf, len, "%.3fms", nsec/NSEC_PER_MSEC);
+		snprintf(buf, len, "%.3gms", nsec/NSEC_PER_MSEC);
 	else if (time >= NSEC_PER_USEC)
-		snprintf(buf, len, "%.3fus", nsec/NSEC_PER_USEC);
+		snprintf(buf, len, "%.3gus", nsec/NSEC_PER_USEC);
 	else
 		snprintf(buf, len, "%lldns", time);
 }

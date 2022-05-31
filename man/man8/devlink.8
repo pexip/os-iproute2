@@ -7,7 +7,7 @@ devlink \- Devlink tool
 .in +8
 .ti -8
 .B devlink
-.RI "[ " OPTIONS " ] { " dev | port | monitor | sb | resource | region " } { " COMMAND " | "
+.RI "[ " OPTIONS " ] { " dev | port | monitor | sb | resource | region | health | trap " } { " COMMAND " | "
 .BR help " }"
 .sp
 
@@ -31,7 +31,7 @@ Read commands from provided file or standard input and invoke them.
 First failure will cause termination of devlink.
 
 .TP
-.BR "\-force"
+.B \-force
 Don't terminate devlink on errors in batch mode.
 If there were any errors during execution of the commands, the application return code will be non zero.
 
@@ -50,6 +50,14 @@ When combined with -j generate a pretty JSON output.
 .TP
 .BR "\-v" , " --verbose"
 Turn on verbose output.
+
+.TP
+.BR "\-s" , " --statistics"
+Output statistics.
+
+.TP
+.BR "\-N", " \-Netns " <NETNSNAME>
+Switches to the specified network namespace.
 
 .SS
 .I OBJECT
@@ -77,6 +85,14 @@ Turn on verbose output.
 .TP
 .B region
 - devlink address region access
+
+.TP
+.B health
+- devlink reporting and recovery
+
+.TP
+.B trap
+- devlink trap configuration
 
 .SS
 .I COMMAND
@@ -109,6 +125,8 @@ Exit status is 0 if command was successful or a positive integer upon failure.
 .BR devlink-sb (8),
 .BR devlink-resource (8),
 .BR devlink-region (8),
+.BR devlink-health (8),
+.BR devlink-trap (8),
 .br
 
 .SH REPORTING BUGS

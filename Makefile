@@ -40,12 +40,6 @@ DEFINES+=-DCONFDIR=\"$(CONFDIR)\" \
          -DNETNS_RUN_DIR=\"$(NETNS_RUN_DIR)\" \
          -DNETNS_ETC_DIR=\"$(NETNS_ETC_DIR)\"
 
-#options for decnet
-ADDLIB+=dnet_ntop.o dnet_pton.o
-
-#options for ipx
-ADDLIB+=ipx_ntop.o ipx_pton.o
-
 #options for mpls
 ADDLIB+=mpls_ntop.o mpls_pton.o
 
@@ -54,7 +48,7 @@ HOSTCC ?= $(CC)
 DEFINES += -D_GNU_SOURCE
 # Turn on transparent support for LFS
 DEFINES += -D_FILE_OFFSET_BITS=64 -D_LARGEFILE_SOURCE -D_LARGEFILE64_SOURCE
-CCOPTS = -O2
+CCOPTS = -O2 -pipe
 WFLAGS := -Wall -Wstrict-prototypes  -Wmissing-prototypes
 WFLAGS += -Wmissing-declarations -Wold-style-definition -Wformat=2
 
@@ -69,7 +63,9 @@ LDLIBS += $(LIBNETLINK)
 all: config.mk
 	@set -e; \
 	for i in $(SUBDIRS); \
-	do echo; echo $$i; $(MAKE) $(MFLAGS) -C $$i; done
+	do echo; echo $$i; $(MAKE) -C $$i; done
+
+.PHONY: clean clobber distclean check cscope version
 
 help:
 	@echo "Make Targets:"
@@ -79,7 +75,7 @@ help:
 	@echo " install             - install binaries on local machine"
 	@echo " check               - run tests"
 	@echo " cscope              - build cscope database"
-	@echo " snapshot            - generate version number header"
+	@echo " version             - update version"
 	@echo ""
 	@echo "Make Arguments:"
 	@echo " V=[0|1]             - set build verbosity level"
@@ -92,35 +88,37 @@ install: all
 	install -m 0755 -d $(DESTDIR)$(CONFDIR)
 	install -m 0755 -d $(DESTDIR)$(ARPDDIR)
 	install -m 0755 -d $(DESTDIR)$(HDRDIR)
-	install -m 0755 -d $(DESTDIR)$(DOCDIR)/examples
-	install -m 0755 -d $(DESTDIR)$(DOCDIR)/examples/diffserv
-	install -m 0644 README.iproute2+tc $(shell find examples -maxdepth 1 -type f) \
-		$(DESTDIR)$(DOCDIR)/examples
-	install -m 0644 $(shell find examples/diffserv -maxdepth 1 -type f) \
-		$(DESTDIR)$(DOCDIR)/examples/diffserv
 	@for i in $(SUBDIRS);  do $(MAKE) -C $$i install; done
 	install -m 0644 $(shell find etc/iproute2 -maxdepth 1 -type f) $(DESTDIR)$(CONFDIR)
 	install -m 0755 -d $(DESTDIR)$(BASH_COMPDIR)
 	install -m 0644 bash-completion/tc $(DESTDIR)$(BASH_COMPDIR)
+	install -m 0644 bash-completion/devlink $(DESTDIR)$(BASH_COMPDIR)
 	install -m 0644 include/bpf_elf.h $(DESTDIR)$(HDRDIR)
 
-snapshot:
-	echo "static const char SNAPSHOT[] = \""`date +%y%m%d`"\";" \
-		> include/SNAPSHOT.h
+version:
+	echo "static const char version[] = \""`git describe --tags --long`"\";" \
+		> include/version.h
 
 clean:
 	@for i in $(SUBDIRS) testsuite; \
-	do $(MAKE) $(MFLAGS) -C $$i clean; done
+	do $(MAKE) -C $$i clean; done
 
 clobber:
 	touch config.mk
-	$(MAKE) $(MFLAGS) clean
+	$(MAKE) clean
 	rm -f config.mk cscope.*
 
 distclean: clobber
 
 check: all
-	cd testsuite && $(MAKE) && $(MAKE) alltests
+	$(MAKE) -C testsuite
+	$(MAKE) -C testsuite alltests
+	@if command -v man >/dev/null 2>&1; then \
+		echo "Checking manpages for syntax errors..."; \
+		$(MAKE) -C man check; \
+	else \
+		echo "man not installed, skipping checks for syntax errors."; \
+	fi
 
 cscope:
 	cscope -b -q -R -Iinclude -sip -slib -smisc -snetem -stc

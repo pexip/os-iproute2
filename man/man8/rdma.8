@@ -19,7 +19,7 @@ rdma \- RDMA tool
 
 .ti -8
 .IR OBJECT " := { "
-.BR dev " | " link " }"
+.BR dev " | " link " | " resource " | " system " | " statistic " }"
 .sp
 
 .ti -8
@@ -52,6 +52,10 @@ If there were any errors during execution of the commands, the application retur
 Output detailed information.  Adding a second \-d includes driver-specific details.
 
 .TP
+.BR "\-r" , " --raw"
+Output includes driver-specific details in raw format.
+
+.TP
 .BR "\-p" , " --pretty"
 When combined with -j generate a pretty JSON output.
 
@@ -69,6 +73,18 @@ Generate JSON output.
 .TP
 .B link
 - RDMA port related.
+
+.TP
+.B resource
+- RDMA resource configuration.
+
+.TP
+.B sys
+- RDMA subsystem related.
+
+.TP
+.B statistic
+- RDMA counter statistic related.
 
 .PP
 The names of all objects may be written in full or
@@ -107,6 +123,8 @@ Exit status is 0 if command was successful or a positive integer upon failure.
 .BR rdma-dev (8),
 .BR rdma-link (8),
 .BR rdma-resource (8),
+.BR rdma-system (8),
+.BR rdma-statistic (8),
 .br
 
 .SH REPORTING BUGS
