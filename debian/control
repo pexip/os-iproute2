@@ -1,12 +1,12 @@
 Source: iproute2
 Section: net
 Priority: optional
-Maintainer: Alexander Wirt <formorer@debian.org>
+Maintainer: Debian Kernel Team <debian-kernel@lists.debian.org>
 Uploaders: Luca Boccassi <bluca@debian.org>
 Homepage: https://wiki.linuxfoundation.org/networking/iproute2
-Vcs-Browser: https://salsa.debian.org/debian/iproute2
-Vcs-Git: https://salsa.debian.org/debian/iproute2.git
-Standards-Version: 4.5.1
+Vcs-Browser: https://salsa.debian.org/kernel-team/iproute2
+Vcs-Git: https://salsa.debian.org/kernel-team/iproute2.git
+Standards-Version: 4.6.2
 Rules-Requires-Root: no
 Build-Depends: bison,
                debhelper-compat (= 13),
@@ -33,7 +33,7 @@ Conflicts: arpd, iproute (<< 20130000-1)
 Replaces: iproute
 Depends: ${misc:Depends}, ${shlibs:Depends}, libcap2-bin,
 Recommends: ${ipmods:Recommends}
-Suggests: iproute2-doc
+Suggests: iproute2-doc, python3:any
 Multi-Arch: foreign
 Description: networking and traffic control tools
  The iproute2 suite is a collection of utilities for networking and
