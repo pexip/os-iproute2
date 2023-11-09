@@ -25,7 +25,7 @@ Build-Depends: bison,
                pkg-config,
                po-debconf,
                zlib1g-dev,
-XS-Pexip-Upstream: http://deb.debian.org/debian/ bullseye
+XS-Pexip-Upstream: http://deb.debian.org/debian/ bookworm
 
 Package: iproute2
 Priority: important
