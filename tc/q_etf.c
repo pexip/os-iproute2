@@ -1,14 +1,9 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * q_etf.c		Earliest TxTime First (ETF).
  *
- *		This program is free software; you can redistribute it and/or
- *		modify it under the terms of the GNU General Public License
- *		as published by the Free Software Foundation; either version
- *		2 of the License, or (at your option) any later version.
- *
  * Authors:	Vinicius Costa Gomes <vinicius.gomes@intel.com>
  *		Jesus Sanchez-Palencia <jesus.sanchez-palencia@intel.com>
- *
  */
 
 #include <stdio.h>
@@ -23,18 +18,6 @@
 
 #include "utils.h"
 #include "tc_util.h"
-
-#define CLOCKID_INVALID (-1)
-static const struct static_clockid {
-	const char *name;
-	clockid_t clockid;
-} clockids_sysv[] = {
-	{ "REALTIME", CLOCK_REALTIME },
-	{ "TAI", CLOCK_TAI },
-	{ "BOOTTIME", CLOCK_BOOTTIME },
-	{ "MONOTONIC", CLOCK_MONOTONIC },
-	{ NULL }
-};
 
 static void explain(void)
 {
@@ -56,38 +39,7 @@ static void explain_clockid(const char *val)
 		val);
 }
 
-static int get_clockid(__s32 *val, const char *arg)
-{
-	const struct static_clockid *c;
-
-	/* Drop the CLOCK_ prefix if that is being used. */
-	if (strcasestr(arg, "CLOCK_") != NULL)
-		arg += sizeof("CLOCK_") - 1;
-
-	for (c = clockids_sysv; c->name; c++) {
-		if (strcasecmp(c->name, arg) == 0) {
-			*val = c->clockid;
-
-			return 0;
-		}
-	}
-
-	return -1;
-}
-
-static const char* get_clock_name(clockid_t clockid)
-{
-	const struct static_clockid *c;
-
-	for (c = clockids_sysv; c->name; c++) {
-		if (clockid == c->clockid)
-			return c->name;
-	}
-
-	return "invalid";
-}
-
-static int etf_parse_opt(struct qdisc_util *qu, int argc,
+static int etf_parse_opt(const struct qdisc_util *qu, int argc,
 			 char **argv, struct nlmsghdr *n, const char *dev)
 {
 	struct tc_etf_qopt opt = {
@@ -155,7 +107,7 @@ static int etf_parse_opt(struct qdisc_util *qu, int argc,
 	return 0;
 }
 
-static int etf_print_opt(struct qdisc_util *qu, FILE *f, struct rtattr *opt)
+static int etf_print_opt(const struct qdisc_util *qu, FILE *f, struct rtattr *opt)
 {
 	struct rtattr *tb[TCA_ETF_MAX+1];
 	struct tc_etf_qopt *qopt;

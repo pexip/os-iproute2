@@ -1,13 +1,8 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * ipmaddr.c		"ip maddress".
  *
- *		This program is free software; you can redistribute it and/or
- *		modify it under the terms of the GNU General Public License
- *		as published by the Free Software Foundation; either version
- *		2 of the License, or (at your option) any later version.
- *
  * Authors:	Alexey Kuznetsov, <kuznet@ms2.inr.ac.ru>
- *
  */
 
 #include <stdio.h>
@@ -84,6 +79,16 @@ static void maddr_ins(struct ma_info **lst, struct ma_info *m)
 	*lst = m;
 }
 
+static void maddr_clear(struct ma_info *lst)
+{
+	struct ma_info *mp;
+
+	while ((mp = lst) != NULL) {
+		lst = mp->next;
+		free(mp);
+	}
+}
+
 static void read_dev_mcast(struct ma_info **result_p)
 {
 	char buf[256];
@@ -107,6 +112,8 @@ static void read_dev_mcast(struct ma_info **result_p)
 		if (len >= 0) {
 			struct ma_info *ma = malloc(sizeof(m));
 
+			if (ma == NULL)
+				break;
 			memcpy(ma, &m, sizeof(m));
 			ma->addr.bytelen = len;
 			ma->addr.bitlen = len<<3;
@@ -154,6 +161,9 @@ static void read_igmp(struct ma_info **result_p)
 		sscanf(buf, "%08x%d", (__u32 *)&m.addr.data, &m.users);
 
 		ma = malloc(sizeof(m));
+		if (ma == NULL)
+			break;
+
 		memcpy(ma, &m, sizeof(m));
 		maddr_ins(result_p, ma);
 	}
@@ -183,8 +193,10 @@ static void read_igmp6(struct ma_info **result_p)
 		if (len >= 0) {
 			struct ma_info *ma = malloc(sizeof(m));
 
-			memcpy(ma, &m, sizeof(m));
+			if (ma == NULL)
+				break;
 
+			memcpy(ma, &m, sizeof(m));
 			ma->addr.bytelen = len;
 			ma->addr.bitlen = len<<3;
 			maddr_ins(result_p, ma);
@@ -284,6 +296,7 @@ static int multiaddr_list(int argc, char **argv)
 	if (!filter.family || filter.family == AF_INET6)
 		read_igmp6(&list);
 	print_mlist(stdout, list);
+	maddr_clear(list);
 	return 0;
 }
 

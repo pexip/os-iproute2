@@ -54,7 +54,9 @@ flower \- flow based traffic control filter
 .IR BOS " | "
 .B mpls_ttl
 .IR TTL " | "
-.BR ip_proto " { " tcp " | " udp " | " sctp " | " icmp " | " icmpv6 " | "
+.B l2tpv3_sid
+.IR LSID " | "
+.BR ip_proto " { " tcp " | " udp " | " sctp " | " icmp " | " icmpv6 " | " l2tp " | "
 .IR IP_PROTO " } | "
 .B ip_tos
 .IR MASKED_IP_TOS " | "
@@ -95,10 +97,18 @@ flower \- flow based traffic control filter
 .B erspan_opts
 |
 .B gtp_opts
+|
+.B pfcp_opts
 }
 .IR OPTIONS " | "
 .BR ip_flags
-.IR IP_FLAGS " }"
+.IR IP_FLAGS " | "
+.B l2_miss
+.IR L2_MISS " | "
+.BR cfm
+.IR CFM_OPTIONS " | "
+.BR enc_flags
+.IR ENCFLAG-LIST " }"
 
 .ti -8
 .IR LSE_LIST " := [ " LSE_LIST " ] " LSE
@@ -115,6 +125,23 @@ flower \- flow based traffic control filter
 .IR BOS " | "
 .B ttl
 .IR TTL " }"
+
+.ti -8
+.IR CFM " := "
+.B cfm mdl
+.IR LEVEL " | "
+.B op
+.IR OPCODE "
+
+.ti -8
+.IR ENCFLAG-LIST " := [ " ENCFLAG-LIST "/ ] " ENCFLAG
+
+.ti -8
+.IR ENCFLAG " := { "
+.BR [no]tuncsum " | "
+.BR [no]tundf " | "
+.BR [no]tunoam " | "
+.BR [no]tuncrit " } "
 
 .SH DESCRIPTION
 The
@@ -291,11 +318,16 @@ entry.
 .I TTL
 is an unsigned 8 bit value in decimal format.
 .TP
+.BI l2tpv3_sid " LSID"
+Match on L2TPv3 session id field transported over IPv4 or IPv6.
+.I LSID
+is an unsigned 32 bit value in decimal format.
+.TP
 .BI ip_proto " IP_PROTO"
 Match on layer four protocol.
 .I IP_PROTO
 may be
-.BR tcp ", " udp ", " sctp ", " icmp ", " icmpv6
+.BR tcp ", " udp ", " sctp ", " icmp ", " icmpv6 ", " l2tp
 or an unsigned 8bit value in hexadecimal format.
 .TP
 .BI ip_tos " MASKED_IP_TOS"
@@ -435,6 +467,8 @@ Match the connection zone, and can be masked.
 .BI erspan_opts " OPTIONS"
 .TQ
 .BI gtp_opts " OPTIONS"
+.TQ
+.BI pfcp_opts " OPTIONS"
 Match on IP tunnel metadata. Key id
 .I NUMBER
 is a 32 bit tunnel key id (e.g. VNI for VXLAN tunnel).
@@ -476,6 +510,13 @@ doesn't support multiple options, and it consists of a key followed by a slash
 and corresponding mask. If the mask is missing, \fBtc\fR assumes a full-length
 match. The option can be described in the form PDU_TYPE:QFI/PDU_TYPE_MASK:QFI_MASK
 where both PDU_TYPE and QFI are represented as a 8bit hexadecimal values.
+pfcp_opts
+.I OPTIONS
+does not support multiple options. It consists of a key followed by a slash
+and corresponding mask. If the mask is missing, \fBtc\fR assumes a full-length
+match. The option can be described in the form TYPE:SEID/TYPE_MASK:SEID_MASK
+where TYPE is represented as a 8bit number, SEID is represented by 64bit. Both
+TYPE and SEID are provided in hex.
 .TP
 .BI ip_flags " IP_FLAGS"
 .I IP_FLAGS
@@ -486,10 +527,46 @@ respectively. firstfrag and nofirstfrag can be used to further distinguish
 fragmented packet. firstfrag can be used to indicate the first fragmented
 packet. nofirstfrag can be used to indicates subsequent fragmented packets
 or non-fragmented packets.
+.TP
+
+.BI l2_miss " L2_MISS"
+Match on layer 2 miss in the bridge driver's FDB / MDB. \fIL2_MISS\fR may be 0
+or 1. When 1, match on packets that encountered a layer 2 miss. When 0, match
+on packets that were forwarded using an FDB / MDB entry. Note that broadcast
+packets do not encounter a miss since a lookup is not performed for them.
+.TP
+
+.BI cfm " CFM_OPTIONS"
+Match on Connectivity Fault Management (CFM) fields.
+.I CFM_OPTIONS
+is a list of options that describe the properties of the CFM information
+fields to match.
+.RS
+.TP
+.BI mdl " LEVEL "
+Match on the Maintenance Domain (MD) level field.
+\fILEVEL\fR is an unsigned 3 bit value in decimal format.
+.TP
+.BI op " OPCODE "
+Match on the CFM opcode field. \fIOPCODE\fR is an unsigned 8 bit value in
+decimal format.
+.RE
+.TP
+.BI enc_flags " ENCFLAG-LIST "
+Match on tunnel control flags.
+.I ENCFLAG-LIST
+is a list of the following tunnel control flags:
+.BR [no]tuncsum ", "
+.BR [no]tundf ", "
+.BR [no]tunoam ", "
+.BR [no]tuncrit ", "
+each separated by '/'.
+.TP
+
 .SH NOTES
 As stated above where applicable, matches of a certain layer implicitly depend
 on the matches of the next lower layer. Precisely, layer one and two matches
-(\fBindev\fR,  \fBdst_mac\fR and \fBsrc_mac\fR)
+(\fBindev\fR,  \fBdst_mac\fR, \fBsrc_mac\fR and \fBenc_flags\fR)
 have no dependency,
 MPLS and layer three matches
 (\fBmpls\fR, \fBmpls_label\fR, \fBmpls_tc\fR, \fBmpls_bos\fR, \fBmpls_ttl\fR,

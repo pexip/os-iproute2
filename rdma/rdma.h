@@ -10,11 +10,12 @@
 #include <string.h>
 #include <errno.h>
 #include <getopt.h>
+#include <time.h>
+#include <libgen.h>
 #include <netinet/in.h>
 #include <libmnl/libmnl.h>
 #include <rdma/rdma_netlink.h>
 #include <rdma/rdma_user_cm.h>
-#include <time.h>
 #include <net/if_arp.h>
 
 #include "list.h"
@@ -40,7 +41,7 @@ struct filter_entry {
 	char *key;
 	char *value;
 	/*
-	 * This field means that we can try to issue .doit calback
+	 * This field means that we can try to issue .doit callback
 	 * on value above. This value can be converted to integer
 	 * with simple atoi(). Otherwise "is_doit" will be false.
 	 */
@@ -61,6 +62,7 @@ struct rd {
 	uint8_t show_details:1;
 	uint8_t show_driver_details:1;
 	uint8_t show_raw:1;
+	uint8_t suppress_errors:1;
 	struct list_head dev_map_list;
 	uint32_t dev_idx;
 	uint32_t port_idx;
@@ -68,12 +70,11 @@ struct rd {
 	struct nlmsghdr *nlh;
 	char *buff;
 	json_writer_t *jw;
-	int json_output;
-	int pretty_output;
-	bool suppress_errors;
 	struct list_head filter_list;
 	char *link_name;
 	char *link_type;
+	char *dev_name;
+	int dev_type;
 };
 
 struct rd_cmd {
@@ -98,6 +99,7 @@ int cmd_link(struct rd *rd);
 int cmd_res(struct rd *rd);
 int cmd_sys(struct rd *rd);
 int cmd_stat(struct rd *rd);
+int cmd_mon(struct rd* rd);
 int rd_exec_cmd(struct rd *rd, const struct rd_cmd *c, const char *str);
 int rd_exec_dev(struct rd *rd, int (*cb)(struct rd *rd));
 int rd_exec_require_dev(struct rd *rd, int (*cb)(struct rd *rd));
@@ -131,16 +133,16 @@ int rd_sendrecv_msg(struct rd *rd, unsigned int seq);
 void rd_prepare_msg(struct rd *rd, uint32_t cmd, uint32_t *seq, uint16_t flags);
 int rd_dev_init_cb(const struct nlmsghdr *nlh, void *data);
 int rd_attr_cb(const struct nlattr *attr, void *data);
-int rd_attr_check(const struct nlattr *attr, int *typep);
 
 /*
  * Print helpers
  */
 void print_driver_table(struct rd *rd, struct nlattr *tb);
 void print_raw_data(struct rd *rd, struct nlattr **nla_line);
-void newline(struct rd *rd);
-void newline_indent(struct rd *rd);
-void print_raw_data(struct rd *rd, struct nlattr **nla_line);
+void newline_indent(void);
+void newline(void);
+
 #define MAX_LINE_LENGTH 80
+
 
 #endif /* _RDMA_TOOL_H_ */

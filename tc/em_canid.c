@@ -1,10 +1,6 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * em_canid.c  Ematch rule to match CAN frames according to their CAN identifiers
- *
- *             This program is free software; you can distribute it and/or
- *             modify it under the terms of the GNU General Public License
- *             as published by the Free Software Foundation; either version
- *             2 of the License, or (at your option) any later version.
  *
  * Idea:       Oliver Hartkopp <oliver.hartkopp@volkswagen.de>
  * Copyright:  (c) 2011 Czech Technical University in Prague
@@ -30,7 +26,7 @@
 #include <inttypes.h>
 #include "m_ematch.h"
 
-#define EM_CANID_RULES_MAX 400 /* Main reason for this number is Nelink
+#define EM_CANID_RULES_MAX 400 /* Main reason for this number is Netlink
 	message size limit equal to Single memory page size. When dump()
 	is invoked, there are even some ematch related headers sent from
 	kernel to userspace together with em_canid configuration --

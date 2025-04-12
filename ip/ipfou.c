@@ -1,10 +1,6 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * ipfou.c	FOU (foo over UDP) support
- *
- *              This program is free software; you can redistribute it and/or
- *              modify it under the terms of the GNU General Public License
- *              as published by the Free Software Foundation; either version
- *              2 of the License, or (at your option) any later version.
  *
  * Authors:	Tom Herbert <therbert@google.com>
  */
@@ -322,6 +318,7 @@ static int do_show(int argc, char **argv)
 	new_json_obj(json);
 	if (rtnl_dump_filter(&genl_rth, print_fou_mapping, stdout) < 0) {
 		fprintf(stderr, "Dump terminated\n");
+		delete_json_obj();
 		return 1;
 	}
 	delete_json_obj();

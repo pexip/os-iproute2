@@ -9,11 +9,22 @@ mirred - mirror/redirect action
 .I DIRECTION ACTION
 .RB "[ " index
 .IR INDEX " ] "
-.BI dev " DEVICENAME"
+.I TARGET
 
 .ti -8
 .IR DIRECTION " := { "
 .BR ingress " | " egress " }"
+
+.ti -8
+.IR TARGET " := { " DEV " | " BLOCK " }"
+
+.ti -8
+.IR DEV " :=  "
+.BI dev " DEVICENAME"
+
+.ti -8
+.IR BLOCK " :=  "
+.BI blockid " BLOCKID"
 
 .ti -8
 .IR ACTION " := { "
@@ -24,6 +35,12 @@ The
 action allows packet mirroring (copying) or redirecting (stealing) the packet it
 receives. Mirroring is what is sometimes referred to as Switch Port Analyzer
 (SPAN) and is commonly used to analyze and/or debug flows.
+When mirroring to a tc block, the packet will be mirrored to all the ports in
+the block with exception of the port where the packet ingressed, if that port is
+part of the tc block. Redirecting is similar to mirroring except that the
+behaviour is to mirror to the first N - 1 ports in the block and redirect to the
+last one (note that the port in which the packet arrived is not going to be
+mirrored or redirected to).
 .SH OPTIONS
 .TP
 .B ingress
@@ -39,7 +56,7 @@ Define whether the packet should be copied
 .RB ( mirror )
 or moved
 .RB ( redirect )
-to the destination interface.
+to the destination interface or block.
 .TP
 .BI index " INDEX"
 Assign a unique ID to this action instead of letting the kernel choose one
@@ -49,14 +66,17 @@ is a 32bit unsigned integer greater than zero.
 .TP
 .BI dev " DEVICENAME"
 Specify the network interface to redirect or mirror to.
+.TP
+.BI blockid " BLOCKID"
+Specify the tc block to redirect or mirror to.
 .SH EXAMPLES
 Limit ingress bandwidth on eth0 to 1mbit/s, redirect exceeding traffic to lo for
 debugging purposes:
 
 .RS
 .EX
-# tc qdisc add dev eth0 handle ffff: ingress
-# tc filter add dev eth0 parent ffff: u32 \\
+# tc qdisc add dev eth0 handle ffff: clsact
+# tc filter add dev eth0 ingress u32 \\
 	match u32 0 0 \\
 	action police rate 1mbit burst 100k conform-exceed pipe \\
 	action mirred egress redirect dev lo
@@ -70,8 +90,8 @@ with e.g. tcpdump:
 .EX
 # ip link add dummy0 type dummy
 # ip link set dummy0 up
-# tc qdisc add dev eth0 handle ffff: ingress
-# tc filter add dev eth0 parent ffff: protocol ip \\
+# tc qdisc add dev eth0 handle ffff: clsact
+# tc filter add dev eth0 ingress protocol ip \\
 	u32 match ip protocol 1 0xff \\
 	action mirred egress mirror dev dummy0
 .EE
@@ -87,12 +107,20 @@ interface, it is possible to send ingress traffic through an instance of
 # modprobe ifb
 # ip link set ifb0 up
 # tc qdisc add dev ifb0 root sfq
-# tc qdisc add dev eth0 handle ffff: ingress
-# tc filter add dev eth0 parent ffff: u32 \\
+# tc qdisc add dev eth0 handle ffff: clsact
+# tc filter add dev eth0 ingress u32 \\
 	match u32 0 0 \\
 	action mirred egress redirect dev ifb0
 .EE
 .RE
+
+.SH LIMITATIONS
+The kernel restricts nesting to four levels to avoid the chance
+of nesting loops.
+.PP
+Do not redirect for one IFB device to another.
+IFB is a very specialized case of packet redirecting device.
+Redirecting from ifbX->ifbY will cause all packets to be dropped.
 
 .SH SEE ALSO
 .BR tc (8),

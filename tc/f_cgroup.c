@@ -1,13 +1,8 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * f_cgroup.c		Control Group Classifier
  *
- *		This program is free software; you can distribute it and/or
- *		modify it under the terms of the GNU General Public License
- *		as published by the Free Software Foundation; either version
- *		2 of the License, or (at your option) any later version.
- *
  * Authors:	Thomas Graf <tgraf@infradead.org>
- *
  */
 
 #include <stdio.h>
@@ -22,7 +17,7 @@ static void explain(void)
 	fprintf(stderr, "                  [ action ACTION_SPEC ]\n");
 }
 
-static int cgroup_parse_opt(struct filter_util *qu, char *handle,
+static int cgroup_parse_opt(const struct filter_util *qu, char *handle,
 			   int argc, char **argv, struct nlmsghdr *n)
 {
 	struct tcmsg *t = NLMSG_DATA(n);
@@ -80,7 +75,7 @@ static int cgroup_parse_opt(struct filter_util *qu, char *handle,
 	return 0;
 }
 
-static int cgroup_print_opt(struct filter_util *qu, FILE *f,
+static int cgroup_print_opt(const struct filter_util *qu, FILE *f,
 			   struct rtattr *opt, __u32 handle)
 {
 	struct rtattr *tb[TCA_CGROUP_MAX+1];
@@ -91,14 +86,14 @@ static int cgroup_print_opt(struct filter_util *qu, FILE *f,
 	parse_rtattr_nested(tb, TCA_CGROUP_MAX, opt);
 
 	if (handle)
-		fprintf(f, "handle 0x%x ", handle);
+		print_0xhex(PRINT_ANY, "handle", "handle %#llx ", handle);
 
 	if (tb[TCA_CGROUP_EMATCHES])
 		print_ematch(f, tb[TCA_CGROUP_EMATCHES]);
 
 	if (tb[TCA_CGROUP_POLICE]) {
-		fprintf(f, "\n");
-		tc_print_police(f, tb[TCA_CGROUP_POLICE]);
+		print_nl();
+		tc_print_police(tb[TCA_CGROUP_POLICE]);
 	}
 
 	if (tb[TCA_CGROUP_ACT])

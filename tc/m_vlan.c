@@ -1,10 +1,6 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * m_vlan.c		vlan manipulation module
- *
- *              This program is free software; you can redistribute it and/or
- *              modify it under the terms of the GNU General Public License
- *              as published by the Free Software Foundation; either version
- *              2 of the License, or (at your option) any later version.
  *
  * Authors:     Jiri Pirko <jiri@resnulli.us>
  */
@@ -60,7 +56,7 @@ static void unexpected(const char *arg)
 	explain();
 }
 
-static int parse_vlan(struct action_util *a, int *argc_p, char ***argv_p,
+static int parse_vlan(const struct action_util *a, int *argc_p, char ***argv_p,
 		      int tca_id, struct nlmsghdr *n)
 {
 	int argc = *argc_p;
@@ -231,7 +227,7 @@ static int parse_vlan(struct action_util *a, int *argc_p, char ***argv_p,
 	return 0;
 }
 
-static int print_vlan(struct action_util *au, FILE *f, struct rtattr *arg)
+static int print_vlan(const struct action_util *au, FILE *f, struct rtattr *arg)
 {
 	SPRINT_BUF(b1);
 	struct rtattr *tb[TCA_VLAN_MAX + 1];
@@ -286,7 +282,7 @@ static int print_vlan(struct action_util *au, FILE *f, struct rtattr *arg)
 			print_string(PRINT_ANY, "src_mac", " src_mac %s", b1);
 		}
 	}
-	print_action_control(f, " ", parm->action, "");
+	print_action_control(" ", parm->action, "");
 
 	print_nl();
 	print_uint(PRINT_ANY, "index", "\t index %u", parm->index);
@@ -297,7 +293,7 @@ static int print_vlan(struct action_util *au, FILE *f, struct rtattr *arg)
 		if (tb[TCA_VLAN_TM]) {
 			struct tcf_t *tm = RTA_DATA(tb[TCA_VLAN_TM]);
 
-			print_tm(f, tm);
+			print_tm(tm);
 		}
 	}
 

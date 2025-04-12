@@ -1,5 +1,5 @@
-etc/
 usr/include/iproute2/
+usr/share/iproute2/
 sbin/arpd /usr/sbin
 sbin/bridge
 sbin/dcb
@@ -19,3 +19,4 @@ sbin/vdpa
 usr/lib/*/tc
 usr/share/bash-completion/
 usr/share/man/
+examples usr/share/doc/iproute2/

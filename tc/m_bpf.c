@@ -1,10 +1,6 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * m_bpf.c	BPF based action module
- *
- *              This program is free software; you can redistribute it and/or
- *              modify it under the terms of the GNU General Public License
- *              as published by the Free Software Foundation; either version
- *              2 of the License, or (at your option) any later version.
  *
  * Authors:     Jiri Pirko <jiri@resnulli.us>
  *              Daniel Borkmann <daniel@iogearbox.net>
@@ -73,7 +69,7 @@ static const struct bpf_cfg_ops bpf_cb_ops = {
 	.ebpf_cb = bpf_ebpf_cb,
 };
 
-static int bpf_parse_opt(struct action_util *a, int *ptr_argc, char ***ptr_argv,
+static int bpf_parse_opt(const struct action_util *a, int *ptr_argc, char ***ptr_argv,
 			 int tca_id, struct nlmsghdr *n)
 {
 	const char *bpf_obj = NULL, *bpf_uds_name = NULL;
@@ -155,7 +151,7 @@ opt_bpf:
 	return ret;
 }
 
-static int bpf_print_opt(struct action_util *au, FILE *f, struct rtattr *arg)
+static int bpf_print_opt(const struct action_util *au, FILE *f, struct rtattr *arg)
 {
 	struct rtattr *tb[TCA_ACT_BPF_MAX + 1];
 	struct tc_act_bpf *parm;
@@ -195,7 +191,7 @@ static int bpf_print_opt(struct action_util *au, FILE *f, struct rtattr *arg)
 			     b, sizeof(b)));
 	}
 
-	print_action_control(f, "default-action ", parm->action, _SL_);
+	print_action_control("default-action ", parm->action, _SL_);
 	print_uint(PRINT_ANY, "index", "\t index %u", parm->index);
 	print_int(PRINT_ANY, "ref", " ref %d", parm->refcnt);
 	print_int(PRINT_ANY, "bind", " bind %d", parm->bindcnt);
@@ -204,11 +200,11 @@ static int bpf_print_opt(struct action_util *au, FILE *f, struct rtattr *arg)
 		if (tb[TCA_ACT_BPF_TM]) {
 			struct tcf_t *tm = RTA_DATA(tb[TCA_ACT_BPF_TM]);
 
-			print_tm(f, tm);
+			print_tm(tm);
 		}
 	}
 
-	fprintf(f, "\n ");
+	print_string(PRINT_FP, NULL, "%s", "\n ");
 	return 0;
 }
 

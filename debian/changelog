@@ -1,3 +1,176 @@
+iproute2 (6.14.0-3) unstable; urgency=medium
+
+  * autopkgtest: remove build-essential and dpkg-dev deps, add gcc
+    (Closes: #1100113)
+  * autopkgtest: add hint-testsuite-triggers for kernel and compiler
+  * Fix Forwarded metadata field in backported patches
+  * Backport patch to fix null pointer dereference
+
+ -- Luca Boccassi <bluca@debian.org>  Sat, 12 Apr 2025 12:15:56 +0100
+
+iproute2 (6.14.0-2) unstable; urgency=medium
+
+  * Backport patches to fix color output with dark backgrounds (Closes:
+    #1088739)
+
+ -- Luca Boccassi <bluca@debian.org>  Sun, 06 Apr 2025 18:26:52 +0100
+
+iproute2 (6.14.0-1) unstable; urgency=medium
+
+  * Update upstream source from tag 'upstream/6.14.0'
+  * Backport patches to support NO_COLOR env var from upstream
+  * d/control: bump Standards-Version to 4.7.2, no changes
+
+ -- Luca Boccassi <bluca@debian.org>  Tue, 25 Mar 2025 10:13:53 +0000
+
+iproute2 (6.13.0-1) unstable; urgency=medium
+
+  * Update upstream source from tag 'upstream/6.13.0'
+
+ -- Luca Boccassi <bluca@debian.org>  Fri, 24 Jan 2025 11:03:54 +0000
+
+iproute2 (6.12.0-1) unstable; urgency=medium
+
+  [ Carles Pina i Estany ]
+  * Update translations
+
+  [ Luca Boccassi ]
+  * Update upstream source from tag 'upstream/6.12.0'
+
+ -- Luca Boccassi <bluca@debian.org>  Thu, 21 Nov 2024 14:16:21 +0000
+
+iproute2 (6.11.0-1) unstable; urgency=medium
+
+  * Update upstream source from tag 'upstream/6.11.0'
+
+ -- Luca Boccassi <bluca@debian.org>  Tue, 08 Oct 2024 15:16:31 +0100
+
+iproute2 (6.10.0-2) unstable; urgency=medium
+
+  * Team upload
+  * Revert "Drop legacy /usr/sbin/ip symlink", as many packages still depend
+    on /sbin/ip or /usr/sbin/ip
+
+ -- Ben Hutchings <benh@debian.org>  Thu, 22 Aug 2024 01:41:38 +0200
+
+iproute2 (6.10.0-1) unstable; urgency=medium
+
+  * Update upstream source from tag 'upstream/6.10.0'
+  * Drop legacy /usr/sbin/ip symlink (Closes: #1064795)
+
+ -- Luca Boccassi <bluca@debian.org>  Fri, 19 Jul 2024 10:35:37 +0100
+
+iproute2 (6.9.0-1) unstable; urgency=medium
+
+  * Bump Standards-Version to 4.7.0, no changes
+  * Update upstream source from tag 'upstream/6.9.0'
+  * Enable output with colors on terminals
+
+ -- Luca Boccassi <bluca@debian.org>  Thu, 16 May 2024 10:30:39 +0100
+
+iproute2 (6.8.0-1) unstable; urgency=medium
+
+  [ Ceppo ]
+  * Update Italian po-debconf translation (Closes: #1063002)
+
+  [ Luca Boccassi ]
+  * Add build dependency on libnsl-dev (Closes: #1065214)
+  * Switch to pkgconf
+  * Update upstream source from tag 'upstream/6.8.0'
+  * Drop 0002-ss-show-extra-info-when-processes-is-not-used.patch, merged
+    upstream
+  * Drop iproute2-doc package
+  * Drop tc/m_xt.so and tc/m_ipt.so, removed upstream
+
+ -- Luca Boccassi <bluca@debian.org>  Tue, 12 Mar 2024 14:02:38 +0000
+
+iproute2 (6.7.0-2) unstable; urgency=medium
+
+  * Backport fix for 'ss' output
+
+ -- Luca Boccassi <bluca@debian.org>  Mon, 22 Jan 2024 12:24:29 +0000
+
+iproute2 (6.7.0-1) unstable; urgency=medium
+
+  * Add Italian debconf translation (Closes: #1056582)
+  * Update upstream source from tag 'upstream/6.7.0'
+  * Bump copyright year ranges in d/copyright
+  * Drop 0002-Revert-Makefile-ensure-CONF_USR_DIR-honours-the-libd.patch,
+    merged upstream
+  * Default config files moved from /usr/lib to /usr/share
+
+ -- Luca Boccassi <bluca@debian.org>  Fri, 12 Jan 2024 21:47:59 +0000
+
+iproute2 (6.6.0-1) unstable; urgency=medium
+
+  * Update upstream source from tag 'upstream/6.6.0'
+  * Backport patch to fix configuration installation
+  * Remove handling of qt_atm.so, dropped upstream
+
+ -- Luca Boccassi <bluca@debian.org>  Sun, 05 Nov 2023 22:46:20 +0000
+
+iproute2 (6.5.0-5) unstable; urgency=medium
+
+  * Use dh-sequence-movetousr
+
+ -- Luca Boccassi <bluca@debian.org>  Tue, 24 Oct 2023 15:24:01 +0100
+
+iproute2 (6.5.0-4) unstable; urgency=medium
+
+  * postinst: handle legacy config files only when upgrading from previous
+    versions that shipped them
+  * postinst: ensure that locally modified legacy config files are
+    preserved as overrides on upgrade (Closes: #1051577)
+  * Note configuration files location changes in NEWS
+
+ -- Luca Boccassi <bluca@debian.org>  Sat, 16 Sep 2023 18:58:51 +0100
+
+iproute2 (6.5.0-3) unstable; urgency=medium
+
+  * Remove further leftovers as part of upstream's move of config to /usr
+    (Closes: #1051577)
+
+ -- Luca Boccassi <bluca@debian.org>  Mon, 11 Sep 2023 09:42:12 +0100
+
+iproute2 (6.5.0-2) unstable; urgency=medium
+
+  * Add maintscript to remove conffiles that upstream has moved to /usr
+    (Closes: #1051577)
+
+ -- Luca Boccassi <bluca@debian.org>  Sun, 10 Sep 2023 21:28:28 +0100
+
+iproute2 (6.5.0-1) unstable; urgency=medium
+
+  [ Luca Boccassi ]
+  * Use wildcard for Lintian overrides
+
+  [ Peter Kvillegård ]
+  * Add Swedish translation of debconf messages (Closes: #1050442)
+
+  [ Luca Boccassi ]
+  * Update upstream source from tag 'upstream/6.5.0'
+  * Use cap_bpf instead of cap_sys_admin for ip vrf-exec
+  * Package-provided config files are now shipped in /usr/iproute2 instead
+    of /etc/iproute2
+
+ -- Luca Boccassi <bluca@debian.org>  Sat, 09 Sep 2023 16:32:54 +0100
+
+iproute2 (6.4.0-1) unstable; urgency=medium
+
+  * Fix patch header Forwarded field
+  * Enable ELF metadata stamping
+  * Update upstream source from tag 'upstream/6.4.0'
+  * Update Lintian overrides
+
+ -- Luca Boccassi <bluca@debian.org>  Fri, 30 Jun 2023 12:16:40 +0100
+
+iproute2 (6.3.0-1) unstable; urgency=medium
+
+  * Drop obsolete conflicts/replaces
+  * Update upstream source from tag 'upstream/6.3.0'
+
+ -- Luca Boccassi <bluca@debian.org>  Tue, 13 Jun 2023 23:49:37 +0100
+
 iproute2 (6.1.0-3) unstable; urgency=medium
 
   * Ensure 'ip mo' resolves to 'ip monitor' (Closes: #1036534)

@@ -1,10 +1,6 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * m_action.c		Action Management
- *
- *		This program is free software; you can distribute it and/or
- *		modify it under the terms of the GNU General Public License
- *		as published by the Free Software Foundation; either version
- *		2 of the License, or (at your option) any later version.
  *
  * Authors:  J Hadi Salim (hadi@cyberus.ca)
  *
@@ -45,7 +41,7 @@ static void act_usage(void)
 	 */
 	fprintf(stderr,
 		"usage: tc actions <ACTSPECOP>*\n"
-		"Where: 	ACTSPECOP := ACR | GD | FL\n"
+		"Where:		ACTSPECOP := ACR | GD | FL\n"
 		"	ACR := add | change | replace <ACTSPEC>*\n"
 		"	GD := get | delete | <ACTISPEC>*\n"
 		"	FL := ls | list | flush | <ACTNAMESPEC>\n"
@@ -63,15 +59,15 @@ static void act_usage(void)
 	exit(-1);
 }
 
-static int print_noaopt(struct action_util *au, FILE *f, struct rtattr *opt)
+static int print_noaopt(const struct action_util *au, FILE *f, struct rtattr *opt)
 {
 	if (opt && RTA_PAYLOAD(opt))
-		fprintf(f, "[Unknown action, optlen=%u] ",
+		fprintf(stderr, "[Unknown action, optlen=%u] ",
 			(unsigned int) RTA_PAYLOAD(opt));
 	return 0;
 }
 
-static int parse_noaopt(struct action_util *au, int *argc_p,
+static int parse_noaopt(const struct action_util *au, int *argc_p,
 			char ***argv_p, int code, struct nlmsghdr *n)
 {
 	int argc = *argc_p;
@@ -87,7 +83,7 @@ static int parse_noaopt(struct action_util *au, int *argc_p,
 	return -1;
 }
 
-static struct action_util *get_action_kind(char *str)
+static struct action_util *get_action_kind(const char *str)
 {
 	static void *aBODY;
 	void *dlh;
@@ -127,7 +123,7 @@ noexist:
 #ifdef CONFIG_GACT
 	if (!looked4gact) {
 		looked4gact = 1;
-		strcpy(str, "gact");
+		str = "gact";
 		goto restart_s;
 	}
 #endif
@@ -400,7 +396,7 @@ static int tc_print_one_action(FILE *f, struct rtattr *arg, bool bind)
 		print_string(PRINT_FP, NULL, "\tAction statistics:", NULL);
 		print_nl();
 		open_json_object("stats");
-		print_tcstats2_attr(f, tb[TCA_ACT_STATS], "\t", NULL);
+		print_tcstats2_attr(tb[TCA_ACT_STATS], "\t", NULL);
 		close_json_object();
 		print_nl();
 	}
@@ -590,6 +586,13 @@ int print_action(struct nlmsghdr *n, void *arg)
 
 	open_json_object(NULL);
 	tc_dump_action(fp, tb[TCA_ACT_TAB], tot_acts ? *tot_acts:0, false);
+
+	if (tb[TCA_ROOT_EXT_WARN_MSG]) {
+		print_string(PRINT_ANY, "warn", "%s",
+			     rta_getattr_str(tb[TCA_ROOT_EXT_WARN_MSG]));
+		print_nl();
+	}
+
 	close_json_object();
 
 	return 0;
@@ -685,7 +688,16 @@ static int tc_action_gd(int cmd, unsigned int flags,
 
 	req.n.nlmsg_seq = rth.dump = ++rth.seq;
 
-	if (rtnl_talk(&rth, &req.n, cmd == RTM_DELACTION ? NULL : &ans) < 0) {
+	if (cmd == RTM_DELACTION) {
+		if (echo_request)
+			ret = rtnl_echo_talk(&rth, &req.n, json, print_action);
+		else
+			ret = rtnl_talk(&rth, &req.n, NULL);
+	} else {
+		ret = rtnl_talk(&rth, &req.n, &ans);
+	}
+
+	if (ret < 0) {
 		fprintf(stderr, "We have an error talking to the kernel\n");
 		return 1;
 	}
@@ -735,7 +747,12 @@ static int tc_action_modify(int cmd, unsigned int flags,
 	}
 	tail->rta_len = (void *) NLMSG_TAIL(&req.n) - (void *) tail;
 
-	if (rtnl_talk(&rth, &req.n, NULL) < 0) {
+	if (echo_request)
+		ret = rtnl_echo_talk(&rth, &req.n, json, print_action);
+	else
+		ret = rtnl_talk(&rth, &req.n, NULL);
+
+	if (ret < 0) {
 		fprintf(stderr, "We have an error talking to the kernel\n");
 		ret = -1;
 	}
@@ -833,7 +850,12 @@ static int tc_act_list_or_flush(int *argc_p, char ***argv_p, int event)
 		req.n.nlmsg_type = RTM_DELACTION;
 		req.n.nlmsg_flags |= NLM_F_ROOT;
 		req.n.nlmsg_flags |= NLM_F_REQUEST;
-		if (rtnl_talk(&rth, &req.n, NULL) < 0) {
+
+		if (echo_request)
+			ret = rtnl_echo_talk(&rth, &req.n, json, print_action);
+		else
+			ret = rtnl_talk(&rth, &req.n, NULL);
+		if (ret < 0) {
 			fprintf(stderr, "We have an error flushing\n");
 			return 1;
 		}

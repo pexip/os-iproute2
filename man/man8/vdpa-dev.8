@@ -31,6 +31,7 @@ vdpa-dev \- vdpa device configuration
 .I NAME
 .B mgmtdev
 .I MGMTDEV
+.RI "[ device_features " DEVICE_FEATURES " ]"
 .RI "[ mac " MACADDR " ]"
 .RI "[ mtu " MTU " ]"
 .RI "[ max_vqp " MAX_VQ_PAIRS " ]"
@@ -49,6 +50,12 @@ vdpa-dev \- vdpa device configuration
 .B qidx
 .I QUEUE_INDEX
 
+.ti -8
+.B vdpa dev set
+.B name
+.I NAME
+.B mac
+.RI "[ " MACADDR " ]"
 
 .SH "DESCRIPTION"
 .SS vdpa dev show - display vdpa device attributes
@@ -74,6 +81,15 @@ Name of the new vdpa device to add.
 Name of the management device to use for device addition.
 
 .PP
+.BI device_features " DEVICE_FEATURES"
+Specifies the virtio device features bit-mask that is provisioned for the new vdpa device.
+
+The bits can be found under include/uapi/linux/virtio*h.
+
+see macros such as VIRTIO_F_ and VIRTIO_XXX(e.g NET)_F_ for specific bit values.
+
+This is optional.
+
 .BI mac " MACADDR"
 - specifies the mac address for the new vdpa device.
 This is applicable only for the network type of vdpa device. This is optional.
@@ -110,6 +126,15 @@ VDPA_DEVICE_NAME
 .BI qidx " QUEUE_INDEX"
 - specifies the virtqueue index to query
 
+.SS vdpa dev set - set the configuration to the vdpa device.
+
+.BI name " NAME"
+-Name of the vdpa device to configure.
+
+.BI mac " MACADDR"
+- specifies the mac address for the vdpa device.
+This is applicable only for the network type of vdpa device.
+
 .SH "EXAMPLES"
 .PP
 vdpa dev show
@@ -125,6 +150,11 @@ Shows the specified vdpa device.
 vdpa dev add name foo mgmtdev vdpa_sim_net
 .RS 4
 Add the vdpa device named foo on the management device vdpa_sim_net.
+.RE
+.PP
+vdpa dev add name foo mgmtdev vdpa_sim_net device_features 0x300020000
+.RS 4
+Add the vdpa device named foo on the management device vdpa_sim_net with device_features of 0x300020000
 .RE
 .PP
 vdpa dev add name foo mgmtdev vdpa_sim_net mac 00:11:22:33:44:55
@@ -155,6 +185,11 @@ Shows the vdpa device configuration of device named foo.
 vdpa dev vstats show vdpa0 qidx 1
 .RS 4
 Shows vendor specific statistics information for vdpa device vdpa0 and virtqueue index 1
+.RE
+.PP
+vdpa dev set name vdpa0 mac 00:11:22:33:44:55
+.RS 4
+Set a specific MAC address to vdpa device vdpa0
 .RE
 
 .SH SEE ALSO

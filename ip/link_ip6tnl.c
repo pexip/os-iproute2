@@ -1,13 +1,8 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * link_ip6tnl.c	ip6tnl driver module
  *
- *		This program is free software; you can redistribute it and/or
- *		modify it under the terms of the GNU General Public License
- *		as published by the Free Software Foundation; either version
- *		2 of the License, or (at your option) any later version.
- *
  * Authors:	Nicolas Dichtel <nicolas.dichtel@6wind.com>
- *
  */
 
 #include <string.h>
@@ -77,7 +72,7 @@ static int ip6tunnel_parse_opt(struct link_util *lu, int argc, char **argv,
 		.i.ifi_family = preferred_family,
 		.i.ifi_index = ifi->ifi_index,
 	};
-	struct nlmsghdr *answer;
+	struct nlmsghdr *answer = NULL;
 	struct rtattr *tb[IFLA_MAX + 1];
 	struct rtattr *linkinfo[IFLA_INFO_MAX+1];
 	struct rtattr *iptuninfo[IFLA_IPTUN_MAX + 1];
@@ -102,12 +97,8 @@ static int ip6tunnel_parse_opt(struct link_util *lu, int argc, char **argv,
 	if (!(n->nlmsg_flags & NLM_F_CREATE)) {
 		const struct rtattr *rta;
 
-		if (rtnl_talk(&rth, &req.n, &answer) < 0) {
-get_failed:
-			fprintf(stderr,
-				"Failed to get existing tunnel info.\n");
-			return -1;
-		}
+		if (rtnl_talk(&rth, &req.n, &answer) < 0)
+			goto get_failed;
 
 		len = answer->nlmsg_len;
 		len -= NLMSG_LENGTH(sizeof(*ifi));
@@ -330,6 +321,11 @@ get_failed:
 	addattr16(n, 1024, IFLA_IPTUN_ENCAP_DPORT, htons(encapdport));
 
 	return 0;
+
+get_failed:
+	fprintf(stderr, "Failed to get existing tunnel info.\n");
+	free(answer);
+	return -1;
 }
 
 static void ip6tunnel_print_opt(struct link_util *lu, FILE *f, struct rtattr *tb[])

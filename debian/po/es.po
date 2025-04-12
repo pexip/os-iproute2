@@ -70,7 +70,7 @@ msgid ""
 "dropped capabilities then it could be used by an attacker to gain root "
 "permissions. It's up to you to decide about the trade-offs and select the "
 "best setting for your system. This will give cap_dac_override, cap_net_admin "
-"and cap_sys_admin to /bin/ip."
+"and cap_bpf to /bin/ip."
 msgstr ""
 "La orden ip admite caídas de capacidades, haciendo una excepción para ip vrf "
 "exec. El inconveniente de establecer los privilegios es que, en el caso "
@@ -78,7 +78,7 @@ msgstr ""
 "orden ip haya descartado las capacidades, un atacante podría usarlo para "
 "obtener privilegios de root. Depende de usted decidir sobre las "
 "compensaciones y seleccionar la mejor configuración para su sistema. Esto "
-"otorgará cap_dac_override, cap_net_admin y cap_sys_admin a /bin/ip."
+"otorgará cap_dac_override, cap_net_admin y cap_bpf a /bin/ip."
 
 #. Type: boolean
 #. Description

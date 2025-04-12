@@ -1,10 +1,6 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * cg_map.c	cgroup v2 cache
- *
- *		This program is free software; you can redistribute it and/or
- *		modify it under the terms of the GNU General Public License
- *		as published by the Free Software Foundation; either version
- *		2 of the License, or (at your option) any later version.
  *
  * Authors:	Dmitry Yakunin <zeil@yandex-team.ru>
  */
@@ -13,8 +9,9 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdbool.h>
+#include <limits.h>
+
 #include <linux/types.h>
-#include <linux/limits.h>
 #include <ftw.h>
 
 #include "cg_map.h"

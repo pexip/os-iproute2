@@ -1,0 +1,17 @@
+Author: ZiAo Li <23110240084@m.fudan.edu.cn>
+Description: nstat: NULL Dereference when no entries specified
+Origin: commit:866e1d107b7de68ca1fcd1d4d5ffecf9d96bff30
+Forwarded: https://git.kernel.org/pub/scm/network/iproute2/iproute2.git/commit/?id=866e1d107b7de68ca1fcd1d4d5ffecf9d96bff30
+--- a/misc/nstat.c
++++ b/misc/nstat.c
+@@ -218,6 +218,10 @@
+ 			p = next;
+ 		}
+ 		n = db;
++		if (n == NULL) {
++			fprintf(stderr, "Error: Invalid input – line has ':' but no entries. Add values after ':'.\n");
++			exit(-2);
++		}
+ 		nread = getline(&buf, &buflen, fp);
+ 		if (nread == -1) {
+ 			fprintf(stderr, "%s:%d: error parsing history file\n",

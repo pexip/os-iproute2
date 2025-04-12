@@ -1,10 +1,6 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * tc_exec.c	"tc exec".
- *
- *		This program is free software; you can redistribute it and/or
- *		modify it under the terms of the GNU General Public License
- *		as published by the Free Software Foundation; either version
- *		2 of the License, or (at your option) any later version.
  *
  * Authors:	Daniel Borkmann <daniel@iogearbox.net>
  */
@@ -30,7 +26,7 @@ static void usage(void)
 		"OPTIONS := ... try tc exec <desired EXEC_KIND> help\n");
 }
 
-static int parse_noeopt(struct exec_util *eu, int argc, char **argv)
+static int parse_noeopt(const struct exec_util *eu, int argc, char **argv)
 {
 	if (argc) {
 		fprintf(stderr, "Unknown exec \"%s\", hence option \"%s\" is unparsable\n",
@@ -100,6 +96,10 @@ int do_exec(int argc, char **argv)
 	strncpy(kind, *argv, sizeof(kind) - 1);
 
 	eu = get_exec_kind(kind);
+	if (eu == NULL) {
+		fprintf(stderr, "Allocation failed finding exec\n");
+		return -1;
+	}
 
 	argc--;
 	argv++;

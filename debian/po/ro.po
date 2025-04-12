@@ -59,7 +59,7 @@ msgid ""
 "of a security critical bug being found before the ip command has dropped "
 "capabilities then it could be used by an attacker to gain root permissions. "
 "It's up to you to decide about the trade-offs and select the best setting for "
-"your system. This will give cap_dac_override, cap_net_admin and cap_sys_admin "
+"your system. This will give cap_dac_override, cap_net_admin and cap_bpf "
 "to /bin/ip."
 msgstr ""
 "Comanda «ip» acceptă înlăturarea privilegiilor de proces, făcând o excepție "
@@ -70,7 +70,7 @@ msgstr ""
 "„root”. Depinde de dumneavoastră să decideți asupra compromisurilor și să "
 "selectați cea mai bună configurare pentru sistemul dvs. Această opțiune va "
 "acorda executabilului «/bin/ip» privilegiile proceselor „cap_dac_override”, "
-"„cap_net_admin” și „cap_sys_admin”."
+"„cap_net_admin” și „cap_bpf”."
 
 #. Type: boolean
 #. Description

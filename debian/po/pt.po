@@ -49,7 +49,7 @@ msgid ""
 "dropped capabilities then it could be used by an attacker to gain root "
 "permissions. It's up to you to decide about the trade-offs and select the "
 "best setting for your system. This will give cap_dac_override, cap_net_admin "
-"and cap_sys_admin to /bin/ip."
+"and cap_bpf to /bin/ip."
 msgstr ""
 "O comando ip suporta capacidades 'dropping', fazendo uma excepção ao "
 "ip vfr exec. O senão de configurar as permissões é que no caso improvável "
@@ -57,7 +57,7 @@ msgstr ""
 "ter baixado (dropped) as capacidades, poder ser usado por um atacante "
 "para ganhar permissões root. É consigo decidir sobre os compromissos e "
 "seleccionar a melhor configuração para o seu sistema. Isto irá fornecer "
-"cap_dac_override, cap_net_admin e cap_sys_admin ao /bin/ip."
+"cap_dac_override, cap_net_admin e cap_bpf ao /bin/ip."
 
 #. Type: boolean
 #. Description

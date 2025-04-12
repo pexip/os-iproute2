@@ -1,10 +1,6 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * iplink_macvlan.c	macvlan/macvtap device support
- *
- *              This program is free software; you can redistribute it and/or
- *              modify it under the terms of the GNU General Public License
- *              as published by the Free Software Foundation; either version
- *              2 of the License, or (at your option) any later version.
  *
  * Authors:     Patrick McHardy <kaber@trash.net>
  *		Arnd Bergmann <arnd@arndb.de>
@@ -30,13 +26,14 @@
 static void print_explain(struct link_util *lu, FILE *f)
 {
 	fprintf(f,
-		"Usage: ... %s mode MODE [flag MODE_FLAG] MODE_OPTS [bcqueuelen BC_QUEUE_LEN]\n"
+		"Usage: ... %s mode MODE [flag MODE_FLAG] MODE_OPTS [bcqueuelen BC_QUEUE_LEN] [bclim BCLIM]\n"
 		"\n"
 		"MODE: private | vepa | bridge | passthru | source\n"
 		"MODE_FLAG: null | nopromisc | nodst\n"
 		"MODE_OPTS: for mode \"source\":\n"
 		"\tmacaddr { { add | del } <macaddr> | set [ <macaddr> [ <macaddr>  ... ] ] | flush }\n"
-		"BC_QUEUE_LEN: Length of the rx queue for broadcast/multicast: [0-4294967295]\n",
+		"BC_QUEUE_LEN: Length of the rx queue for broadcast/multicast: [0-4294967295]\n"
+		"BCLIM: Threshold for broadcast queueing: 32-bit integer\n",
 		lu->id
 	);
 }
@@ -68,6 +65,12 @@ static int bc_queue_len_arg(const char *arg)
 	fprintf(stderr,
 		"Error: argument of \"bcqueuelen\" must be a positive integer [0-4294967295], not \"%s\"\n",
 		arg);
+	return -1;
+}
+
+static int bclim_arg(const char *arg)
+{
+	fprintf(stderr, "Error: illegal value for \"bclim\": \"%s\"\n", arg);
 	return -1;
 }
 
@@ -172,6 +175,15 @@ static int macvlan_parse_opt(struct link_util *lu, int argc, char **argv,
 				return bc_queue_len_arg(*argv);
 			}
 			addattr32(n, 1024, IFLA_MACVLAN_BC_QUEUE_LEN, bc_queue_len);
+		} else if (!strcmp(*argv, "bclim")) {
+			__s32 bclim;
+			NEXT_ARG();
+
+			if (get_s32(&bclim, *argv, 0)) {
+				return bclim_arg(*argv);
+			}
+			addattr_l(n, 1024, IFLA_MACVLAN_BC_CUTOFF,
+				  &bclim, sizeof(bclim));
 		} else if (matches(*argv, "help") == 0) {
 			explain(lu);
 			return -1;
@@ -247,6 +259,12 @@ static void macvlan_print_opt(struct link_util *lu, FILE *f, struct rtattr *tb[]
 		RTA_PAYLOAD(tb[IFLA_MACVLAN_BC_QUEUE_LEN_USED]) >= sizeof(__u32)) {
 		__u32 bc_queue_len = rta_getattr_u32(tb[IFLA_MACVLAN_BC_QUEUE_LEN_USED]);
 		print_luint(PRINT_ANY, "usedbcqueuelen", "usedbcqueuelen %lu ", bc_queue_len);
+	}
+
+	if (tb[IFLA_MACVLAN_BC_CUTOFF] &&
+		RTA_PAYLOAD(tb[IFLA_MACVLAN_BC_CUTOFF]) >= sizeof(__s32)) {
+		__s32 bclim = rta_getattr_s32(tb[IFLA_MACVLAN_BC_CUTOFF]);
+		print_int(PRINT_ANY, "bclim", "bclim %d ", bclim);
 	}
 
 	/* in source mode, there are more options to print */

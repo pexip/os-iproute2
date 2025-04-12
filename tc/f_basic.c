@@ -1,13 +1,8 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * f_basic.c		Basic Classifier
  *
- *		This program is free software; you can distribute it and/or
- *		modify it under the terms of the GNU General Public License
- *		as published by the Free Software Foundation; either version
- *		2 of the License, or (at your option) any later version.
- *
  * Authors:	Thomas Graf <tgraf@suug.ch>
- *
  */
 
 #include <stdio.h>
@@ -37,7 +32,7 @@ static void explain(void)
 		"NOTE: CLASSID is parsed as hexadecimal input.\n");
 }
 
-static int basic_parse_opt(struct filter_util *qu, char *handle,
+static int basic_parse_opt(const struct filter_util *qu, char *handle,
 			   int argc, char **argv, struct nlmsghdr *n)
 {
 	struct tcmsg *t = NLMSG_DATA(n);
@@ -108,7 +103,7 @@ static int basic_parse_opt(struct filter_util *qu, char *handle,
 	return 0;
 }
 
-static int basic_print_opt(struct filter_util *qu, FILE *f,
+static int basic_print_opt(const struct filter_util *qu, FILE *f,
 			   struct rtattr *opt, __u32 handle)
 {
 	struct rtattr *tb[TCA_BASIC_MAX+1];
@@ -135,7 +130,7 @@ static int basic_print_opt(struct filter_util *qu, FILE *f,
 
 	if (tb[TCA_BASIC_POLICE]) {
 		print_nl();
-		tc_print_police(f, tb[TCA_BASIC_POLICE]);
+		tc_print_police(tb[TCA_BASIC_POLICE]);
 	}
 
 	if (tb[TCA_BASIC_ACT]) {

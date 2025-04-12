@@ -1,0 +1,61 @@
+Author: Ben Hutchings <benh@debian.org>
+Description: color: Introduce and use default_color_opt() function
+Origin: commit:446edf9ef8055125a8ef28a9d9218b05971ee465
+Forwarded: https://git.kernel.org/pub/scm/network/iproute2/iproute2.git/commit/?id=446edf9ef8055125a8ef28a9d9218b05971ee465
+--- a/bridge/bridge.c
++++ b/bridge/bridge.c
+@@ -103,7 +103,7 @@
+ int
+ main(int argc, char **argv)
+ {
+-	int color = CONF_COLOR;
++	int color = default_color_opt();
+ 
+ 	while (argc > 1) {
+ 		const char *opt = argv[1];
+--- a/include/color.h
++++ b/include/color.h
+@@ -20,6 +20,7 @@
+ 	COLOR_OPT_ALWAYS = 2
+ };
+ 
++int default_color_opt(void);
+ bool check_enable_color(int color, int json);
+ bool matches_color(const char *arg, int *val);
+ int color_fprintf(FILE *fp, enum color_attr attr, const char *fmt, ...);
+--- a/ip/ip.c
++++ b/ip/ip.c
+@@ -180,7 +180,7 @@
+ 	const char *libbpf_version;
+ 	char *batch_file = NULL;
+ 	char *basename;
+-	int color = CONF_COLOR;
++	int color = default_color_opt();
+ 
+ 	/* to run vrf exec without root, capabilities might be set, drop them
+ 	 * if not needed as the first thing.
+--- a/lib/color.c
++++ b/lib/color.c
+@@ -81,6 +81,11 @@
+ 	set_color_palette();
+ }
+ 
++int default_color_opt(void)
++{
++	return CONF_COLOR;
++}
++
+ bool check_enable_color(int color, int json)
+ {
+ 	if (json || color == COLOR_OPT_NEVER)
+--- a/tc/tc.c
++++ b/tc/tc.c
+@@ -254,7 +254,7 @@
+ {
+ 	const char *libbpf_version;
+ 	char *batch_file = NULL;
+-	int color = CONF_COLOR;
++	int color = default_color_opt();
+ 	int ret;
+ 
+ 	while (argc > 1) {

@@ -1,13 +1,8 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * iptunnel.c	       "ip tuntap"
  *
- *		This program is free software; you can redistribute it and/or
- *		modify it under the terms of the GNU General Public License
- *		as published by the Free Software Foundation; either version
- *		2 of the License, or (at your option) any later version.
- *
  * Authors:	David Woodhouse <David.Woodhouse@intel.com>
- *
  */
 
 #include <stdio.h>
@@ -112,8 +107,6 @@ static int tap_del_ioctl(struct ifreq *ifr)
 static int parse_args(int argc, char **argv,
 		      struct ifreq *ifr, uid_t *uid, gid_t *gid)
 {
-	int count = 0;
-
 	memset(ifr, 0, sizeof(*ifr));
 
 	ifr->ifr_flags |= IFF_NO_PI;
@@ -192,7 +185,6 @@ static int parse_args(int argc, char **argv,
 			if (get_ifname(ifr->ifr_name, *argv))
 				invarg("\"name\" not a valid ifname", *argv);
 		}
-		count++;
 		argc--; argv++;
 	}
 
@@ -279,8 +271,7 @@ static void show_processes(const char *name)
 
 	fd_path = globbuf.gl_pathv;
 	while (*fd_path) {
-		const char *dev_net_tun = "/dev/net/tun";
-		const size_t linkbuf_len = strlen(dev_net_tun) + 2;
+		const size_t linkbuf_len = strlen(TUNDEV) + 2;
 		char linkbuf[linkbuf_len], *fdinfo;
 		int pid, fd;
 		FILE *f;
@@ -297,7 +288,7 @@ static void show_processes(const char *name)
 			goto next;
 		}
 		linkbuf[err] = '\0';
-		if (strcmp(dev_net_tun, linkbuf))
+		if (strcmp(TUNDEV, linkbuf))
 			goto next;
 
 		if (asprintf(&fdinfo, "/proc/%d/fdinfo/%d", pid, fd) < 0)
@@ -446,6 +437,7 @@ static int do_show(int argc, char **argv)
 
 	if (rtnl_dump_filter(&rth, print_tuntap, NULL) < 0) {
 		fprintf(stderr, "Dump terminated\n");
+		delete_json_obj();
 		return -1;
 	}
 

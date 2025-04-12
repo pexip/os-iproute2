@@ -1,13 +1,7 @@
-/*
- * q_htb.c		HTB.
+/* SPDX-License-Identifier: GPL-2.0 */
+/* q_htb.c	Hierarchical Token Bucket
  *
- *		This program is free software; you can redistribute it and/or
- *		modify it under the terms of the GNU General Public License
- *		as published by the Free Software Foundation; either version
- *		2 of the License, or (at your option) any later version.
- *
- * Authors:	Martin Devera, devik@cdi.cz
- *
+ * Author:	Martin Devera, devik@cdi.cz
  */
 
 #include <stdio.h>
@@ -55,11 +49,11 @@ static void explain(void)
 
 static void explain1(char *arg)
 {
-    fprintf(stderr, "Illegal \"%s\"\n", arg);
-    explain();
+	fprintf(stderr, "Illegal \"%s\"\n", arg);
+	explain();
 }
 
-static int htb_parse_opt(struct qdisc_util *qu, int argc,
+static int htb_parse_opt(const struct qdisc_util *qu, int argc,
 			 char **argv, struct nlmsghdr *n, const char *dev)
 {
 	unsigned int direct_qlen = ~0U;
@@ -113,7 +107,8 @@ static int htb_parse_opt(struct qdisc_util *qu, int argc,
 	return 0;
 }
 
-static int htb_parse_class_opt(struct qdisc_util *qu, int argc, char **argv, struct nlmsghdr *n, const char *dev)
+static int htb_parse_class_opt(const struct qdisc_util *qu, int argc, char **argv,
+			       struct nlmsghdr *n, const char *dev)
 {
 	struct tc_htb_opt opt = {};
 	__u32 rtab[256], ctab[256];
@@ -229,7 +224,7 @@ static int htb_parse_class_opt(struct qdisc_util *qu, int argc, char **argv, str
 	opt.ceil.rate = (ceil64 >= (1ULL << 32)) ? ~0U : ceil64;
 
 	/* compute minimal allowed burst from rate; mtu is added here to make
-	   sute that buffer is larger than mtu and to have some safeguard space */
+	   sure that buffer is larger than mtu and to have some safeguard space */
 	if (!buffer)
 		buffer = rate64 / get_hz() + mtu;
 	if (!cbuffer)
@@ -268,7 +263,7 @@ static int htb_parse_class_opt(struct qdisc_util *qu, int argc, char **argv, str
 	return 0;
 }
 
-static int htb_print_opt(struct qdisc_util *qu, FILE *f, struct rtattr *opt)
+static int htb_print_opt(const struct qdisc_util *qu, FILE *f, struct rtattr *opt)
 {
 	struct rtattr *tb[TCA_HTB_MAX + 1];
 	struct tc_htb_opt *hopt;
@@ -307,27 +302,28 @@ static int htb_print_opt(struct qdisc_util *qu, FILE *f, struct rtattr *opt)
 		    RTA_PAYLOAD(tb[TCA_HTB_CEIL64]) >= sizeof(ceil64))
 			ceil64 = rta_getattr_u64(tb[TCA_HTB_CEIL64]);
 
-		tc_print_rate(PRINT_FP, NULL, "rate %s ", rate64);
+		tc_print_rate(PRINT_ANY, "rate", "rate %s ", rate64);
 		if (hopt->rate.overhead)
-			fprintf(f, "overhead %u ", hopt->rate.overhead);
+			print_uint(PRINT_ANY, "overhead", "overhead %u ", hopt->rate.overhead);
 		buffer = tc_calc_xmitsize(rate64, hopt->buffer);
 
-		tc_print_rate(PRINT_FP, NULL, "ceil %s ", ceil64);
+		tc_print_rate(PRINT_ANY, "ceil", "ceil %s ", ceil64);
 		cbuffer = tc_calc_xmitsize(ceil64, hopt->cbuffer);
 		linklayer = (hopt->rate.linklayer & TC_LINKLAYER_MASK);
 		if (linklayer > TC_LINKLAYER_ETHERNET || show_details)
-			fprintf(f, "linklayer %s ", sprint_linklayer(linklayer, b3));
+			print_string(PRINT_ANY, "linklayer", "linklayer %s ",
+				     sprint_linklayer(linklayer, b3));
 		if (show_details) {
-			print_size(PRINT_FP, NULL, "burst %s/", buffer);
-			fprintf(f, "%u ", 1<<hopt->rate.cell_log);
-			print_size(PRINT_FP, NULL, "mpu %s ", hopt->rate.mpu);
-			print_size(PRINT_FP, NULL, "cburst %s/", cbuffer);
-			fprintf(f, "%u ", 1<<hopt->ceil.cell_log);
-			print_size(PRINT_FP, NULL, "mpu %s ", hopt->ceil.mpu);
-			fprintf(f, "level %d ", (int)hopt->level);
+			print_size(PRINT_ANY, "burst", "burst %s/", buffer);
+			print_uint(PRINT_ANY, "burst_cell", "%u", 1<<hopt->rate.cell_log);
+			print_size(PRINT_ANY, "mpu_rate", "mpu %s ", hopt->rate.mpu);
+			print_size(PRINT_ANY, "cburst", "cburst %s/", cbuffer);
+			print_uint(PRINT_ANY, "cburst_cell", "%u", 1<<hopt->ceil.cell_log);
+			print_size(PRINT_ANY, "mpu_ceil", "mpu %s ", hopt->ceil.mpu);
+			print_int(PRINT_ANY, "level", "level %d ", (int)hopt->level);
 		} else {
-			print_size(PRINT_FP, NULL, "burst %s ", buffer);
-			print_size(PRINT_FP, NULL, "cburst %s ", cbuffer);
+			print_size(PRINT_ANY, "burst", "burst %s ", buffer);
+			print_size(PRINT_ANY, "cburst", "cburst %s", cbuffer);
 		}
 		if (show_raw)
 			fprintf(f, "buffer [%08x] cbuffer [%08x] ",
@@ -358,7 +354,7 @@ static int htb_print_opt(struct qdisc_util *qu, FILE *f, struct rtattr *opt)
 	return 0;
 }
 
-static int htb_print_xstats(struct qdisc_util *qu, FILE *f, struct rtattr *xstats)
+static int htb_print_xstats(const struct qdisc_util *qu, FILE *f, struct rtattr *xstats)
 {
 	struct tc_htb_xstats *st;
 
@@ -369,9 +365,13 @@ static int htb_print_xstats(struct qdisc_util *qu, FILE *f, struct rtattr *xstat
 		return -1;
 
 	st = RTA_DATA(xstats);
-	fprintf(f, " lended: %u borrowed: %u giants: %u\n",
-		st->lends, st->borrows, st->giants);
-	fprintf(f, " tokens: %d ctokens: %d\n", st->tokens, st->ctokens);
+	print_uint(PRINT_ANY, "lended", " lended: %u ", st->lends);
+	print_uint(PRINT_ANY, "borrowed", "borrowed: %u ", st->borrows);
+	print_uint(PRINT_ANY, "giants", "giants: %u", st->giants);
+	print_nl();
+	print_int(PRINT_ANY, "tokens", " tokens: %d ", st->tokens);
+	print_int(PRINT_ANY, "ctokens", "ctokens: %d", st->ctokens);
+	print_nl();
 	return 0;
 }
 

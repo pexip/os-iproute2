@@ -1,13 +1,8 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * m_nat.c		NAT module
  *
- *		This program is free software; you can distribute it and/or
- *		modify it under the terms of the GNU General Public License
- *		as published by the Free Software Foundation; either version
- *		2 of the License, or (at your option) any later version.
- *
  * Authors:	Herbert Xu <herbert@gondor.apana.org.au>
- *
  */
 
 #include <stdio.h>
@@ -60,7 +55,7 @@ parse_nat_args(int *argc_p, char ***argv_p, struct tc_nat *sel)
 		goto bad_val;
 
 	sel->old_addr = addr.data[0];
-	sel->mask = htonl(~0u << (32 - addr.bitlen));
+	sel->mask = htonl(~(uint64_t)0 << (32 - addr.bitlen));
 
 	NEXT_ARG();
 
@@ -81,7 +76,7 @@ bad_val:
 }
 
 static int
-parse_nat(struct action_util *a, int *argc_p, char ***argv_p, int tca_id, struct nlmsghdr *n)
+parse_nat(const struct action_util *a, int *argc_p, char ***argv_p, int tca_id, struct nlmsghdr *n)
 {
 	struct tc_nat sel = {};
 
@@ -93,7 +88,9 @@ parse_nat(struct action_util *a, int *argc_p, char ***argv_p, int tca_id, struct
 	while (argc > 0) {
 		if (matches(*argv, "nat") == 0) {
 			NEXT_ARG();
-			if (parse_nat_args(&argc, &argv, &sel)) {
+			if (strcmp(*argv, "index") == 0) {
+				goto skip_args;
+			} else if (parse_nat_args(&argc, &argv, &sel)) {
 				fprintf(stderr, "Illegal nat construct (%s)\n",
 					*argv);
 				explain();
@@ -118,6 +115,7 @@ parse_nat(struct action_util *a, int *argc_p, char ***argv_p, int tca_id, struct
 
 	if (argc) {
 		if (matches(*argv, "index") == 0) {
+skip_args:
 			NEXT_ARG();
 			if (get_u32(&sel.index, *argv, 10)) {
 				fprintf(stderr, "Nat: Illegal \"index\"\n");
@@ -138,7 +136,7 @@ parse_nat(struct action_util *a, int *argc_p, char ***argv_p, int tca_id, struct
 }
 
 static int
-print_nat(struct action_util *au, FILE * f, struct rtattr *arg)
+print_nat(const struct action_util *au, FILE * f, struct rtattr *arg)
 {
 	struct tc_nat *sel;
 	struct rtattr *tb[TCA_NAT_MAX + 1];
@@ -158,7 +156,7 @@ print_nat(struct action_util *au, FILE * f, struct rtattr *arg)
 	}
 	sel = RTA_DATA(tb[TCA_NAT_PARMS]);
 
-	len = ffs(sel->mask);
+	len = ffs(ntohl(sel->mask));
 	len = len ? 33 - len : 0;
 
 	print_string(PRINT_ANY, "direction", "%s",
@@ -171,7 +169,7 @@ print_nat(struct action_util *au, FILE * f, struct rtattr *arg)
 	print_string(PRINT_ANY, "new_addr", " %s",
 		     format_host_r(AF_INET, 4, &sel->new_addr, buf1, sizeof(buf1)));
 
-	print_action_control(f, " ", sel->action, "");
+	print_action_control(" ", sel->action, "");
 	print_nl();
 	print_uint(PRINT_ANY, "index", "\t index %u", sel->index);
 	print_int(PRINT_ANY, "ref", " ref %d", sel->refcnt);
@@ -181,7 +179,7 @@ print_nat(struct action_util *au, FILE * f, struct rtattr *arg)
 		if (tb[TCA_NAT_TM]) {
 			struct tcf_t *tm = RTA_DATA(tb[TCA_NAT_TM]);
 
-			print_tm(f, tm);
+			print_tm(tm);
 		}
 	}
 

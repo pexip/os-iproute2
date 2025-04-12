@@ -1,19 +1,8 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * q_multiq.c		Multiqueue aware qdisc
  *
  * Copyright (c) 2008, Intel Corporation.
- *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms and conditions of the GNU General Public License,
- * version 2, as published by the Free Software Foundation.
- *
- * This program is distributed in the hope it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
- * more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, see <http://www.gnu.org/licenses>.
  *
  * Author: Alexander Duyck <alexander.h.duyck@intel.com>
  *
@@ -39,7 +28,7 @@ static void explain(void)
 	fprintf(stderr, "Usage: ... multiq [help]\n");
 }
 
-static int multiq_parse_opt(struct qdisc_util *qu, int argc, char **argv,
+static int multiq_parse_opt(const struct qdisc_util *qu, int argc, char **argv,
 			    struct nlmsghdr *n, const char *dev)
 {
 	struct tc_multiq_qopt opt = {};
@@ -59,7 +48,7 @@ static int multiq_parse_opt(struct qdisc_util *qu, int argc, char **argv,
 	return 0;
 }
 
-static int multiq_print_opt(struct qdisc_util *qu, FILE *f, struct rtattr *opt)
+static int multiq_print_opt(const struct qdisc_util *qu, FILE *f, struct rtattr *opt)
 {
 	struct tc_multiq_qopt *qopt;
 
