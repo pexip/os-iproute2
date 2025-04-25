@@ -1,13 +1,8 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * brmonitor.c		"bridge monitor"
  *
- *		This program is free software; you can redistribute it and/or
- *		modify it under the terms of the GNU General Public License
- *		as published by the Free Software Foundation; either version
- *		2 of the License, or (at your option) any later version.
- *
  * Authors:	Stephen Hemminger <shemminger@vyatta.com>
- *
  */
 
 #include <stdio.h>
@@ -63,7 +58,7 @@ static int accept_msg(struct rtnl_ctrl_data *ctrl,
 
 	case RTM_NEWTUNNEL:
 	case RTM_DELTUNNEL:
-		return print_vnifilter_rtm(n, arg, true);
+		return print_vnifilter_rtm(n, arg);
 
 	default:
 		return 0;

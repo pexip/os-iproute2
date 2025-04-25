@@ -1,22 +1,10 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * m_skbedit.c		SKB Editing module
  *
  * Copyright (c) 2008, Intel Corporation.
  *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms and conditions of the GNU General Public License,
- * version 2, as published by the Free Software Foundation.
- *
- * This program is distributed in the hope it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
- * more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, see <http://www.gnu.org/licenses>.
- *
  * Authors:	Alexander Duyck <alexander.h.duyck@intel.com>
- *
  */
 
 #include <stdio.h>
@@ -53,7 +41,7 @@ usage(void)
 }
 
 static int
-parse_skbedit(struct action_util *a, int *argc_p, char ***argv_p, int tca_id,
+parse_skbedit(const struct action_util *a, int *argc_p, char ***argv_p, int tca_id,
 	      struct nlmsghdr *n)
 {
 	int argc = *argc_p;
@@ -189,7 +177,7 @@ parse_skbedit(struct action_util *a, int *argc_p, char ***argv_p, int tca_id,
 	return 0;
 }
 
-static int print_skbedit(struct action_util *au, FILE *f, struct rtattr *arg)
+static int print_skbedit(const struct action_util *au, FILE *f, struct rtattr *arg)
 {
 	struct rtattr *tb[TCA_SKBEDIT_MAX + 1];
 
@@ -251,7 +239,7 @@ static int print_skbedit(struct action_util *au, FILE *f, struct rtattr *arg)
 				     "inheritdsfield");
 	}
 
-	print_action_control(f, " ", p->action, "");
+	print_action_control(" ", p->action, "");
 
 	print_nl();
 	print_uint(PRINT_ANY, "index", "\t index %u", p->index);
@@ -262,7 +250,7 @@ static int print_skbedit(struct action_util *au, FILE *f, struct rtattr *arg)
 		if (tb[TCA_SKBEDIT_TM]) {
 			struct tcf_t *tm = RTA_DATA(tb[TCA_SKBEDIT_TM]);
 
-			print_tm(f, tm);
+			print_tm(tm);
 		}
 	}
 

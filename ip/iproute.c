@@ -1,13 +1,8 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * iproute.c		"ip route".
  *
- *		This program is free software; you can redistribute it and/or
- *		modify it under the terms of the GNU General Public License
- *		as published by the Free Software Foundation; either version
- *		2 of the License, or (at your option) any later version.
- *
  * Authors:	Alexey Kuznetsov, <kuznet@ms2.inr.ac.ru>
- *
  */
 
 #include <stdio.h>
@@ -66,12 +61,13 @@ static void usage(void)
 		"       ip route save SELECTOR\n"
 		"       ip route restore\n"
 		"       ip route showdump\n"
-		"       ip route get [ ROUTE_GET_FLAGS ] ADDRESS\n"
+		"       ip route get [ ROUTE_GET_FLAGS ] [ to ] ADDRESS\n"
 		"                            [ from ADDRESS iif STRING ]\n"
 		"                            [ oif STRING ] [ tos TOS ]\n"
 		"                            [ mark NUMBER ] [ vrf NAME ]\n"
 		"                            [ uid NUMBER ] [ ipproto PROTOCOL ]\n"
 		"                            [ sport NUMBER ] [ dport NUMBER ]\n"
+		"                            [ as ADDRESS ] [ flowlabel FLOWLABEL ]\n"
 		"       ip route { add | del | change | append | replace } ROUTE\n"
 		"SELECTOR := [ root PREFIX ] [ match PREFIX ] [ exact PREFIX ]\n"
 		"            [ table TABLE_ID ] [ vrf NAME ] [ proto RTPROTO ]\n"
@@ -117,7 +113,8 @@ static void usage(void)
 		"FLAVOR := { psp | usp | usd | next-csid }\n"
 		"IOAM6HDR := trace prealloc type IOAM6_TRACE_TYPE ns IOAM6_NAMESPACE size IOAM6_TRACE_SIZE\n"
 		"XFRMINFO := if_id IF_ID [ link_dev LINK ]\n"
-		"ROUTE_GET_FLAGS := [ fibmatch ]\n");
+		"ROUTE_GET_FLAGS := ROUTE_GET_FLAG [ ROUTE_GET_FLAGS ]\n"
+		"ROUTE_GET_FLAG := [ connected | fibmatch | notify ]\n");
 	exit(-1);
 }
 
@@ -155,6 +152,24 @@ static int flush_update(void)
 	}
 	filter.flushp = 0;
 	return 0;
+}
+
+static bool filter_multipath(const struct rtattr *rta)
+{
+	const struct rtnexthop *nh = RTA_DATA(rta);
+	int len = RTA_PAYLOAD(rta);
+
+	while (len >= sizeof(*nh)) {
+		if (nh->rtnh_len > len)
+			break;
+
+		if (!((nh->rtnh_ifindex ^ filter.oif) & filter.oifmask))
+			return true;
+
+		len -= NLMSG_ALIGN(nh->rtnh_len);
+		nh = RTNH_NEXT(nh);
+	}
+	return false;
 }
 
 static int filter_nlmsg(struct nlmsghdr *n, struct rtattr **tb, int host_len)
@@ -313,12 +328,15 @@ static int filter_nlmsg(struct nlmsghdr *n, struct rtattr **tb, int host_len)
 			return 0;
 	}
 	if (filter.oifmask) {
-		int oif = 0;
+		if (tb[RTA_OIF]) {
+			int oif = rta_getattr_u32(tb[RTA_OIF]);
 
-		if (tb[RTA_OIF])
-			oif = rta_getattr_u32(tb[RTA_OIF]);
-		if ((oif^filter.oif)&filter.oifmask)
-			return 0;
+			if ((oif ^ filter.oif) & filter.oifmask)
+				return 0;
+		} else if (tb[RTA_MULTIPATH]) {
+			if (!filter_multipath(tb[RTA_MULTIPATH]))
+				return 0;
+		}
 	}
 	if (filter.markmask) {
 		int mark = 0;
@@ -354,6 +372,11 @@ static void print_rtax_features(FILE *fp, unsigned int features)
 	if (features & RTAX_FEATURE_ECN) {
 		print_null(PRINT_ANY, "ecn", "ecn ", NULL);
 		features &= ~RTAX_FEATURE_ECN;
+	}
+
+	if (features & RTAX_FEATURE_TCP_USEC_TS) {
+		print_null(PRINT_ANY, "tcp_usec_ts", "tcp_usec_ts ", NULL);
+		features &= ~RTAX_FEATURE_TCP_USEC_TS;
 	}
 
 	if (features)
@@ -563,7 +586,7 @@ void __print_rta_gateway(FILE *fp, unsigned char family, const char *gateway)
 	}
 }
 
-void print_rta_gateway(FILE *fp, unsigned char family, const struct rtattr *rta)
+static void print_rta_gateway(FILE *fp, unsigned char family, const struct rtattr *rta)
 {
 	const char *gateway = format_host_rta(family, rta);
 
@@ -753,6 +776,7 @@ int print_route(struct nlmsghdr *n, void *arg)
 	int ret;
 
 	SPRINT_BUF(b1);
+	SPRINT_BUF(b2);
 
 	if (n->nlmsg_type != RTM_NEWROUTE && n->nlmsg_type != RTM_DELROUTE) {
 		fprintf(stderr, "Not a route: %08x %08x %08x\n",
@@ -794,6 +818,8 @@ int print_route(struct nlmsghdr *n, void *arg)
 			return 0;
 	}
 
+	print_headers(fp, "[ROUTE]");
+
 	open_json_object(NULL);
 	if (n->nlmsg_type == RTM_DELROUTE)
 		print_bool(PRINT_ANY, "deleted", "Deleted ", true);
@@ -814,7 +840,7 @@ int print_route(struct nlmsghdr *n, void *arg)
 				 r->rtm_dst_len);
 		} else {
 			const char *hostname = format_host_rta_r(family, tb[RTA_DST],
-					  b1, sizeof(b1));
+					  b2, sizeof(b2));
 			if (hostname)
 				strncpy(b1, hostname, sizeof(b1) - 1);
 		}
@@ -837,7 +863,7 @@ int print_route(struct nlmsghdr *n, void *arg)
 				 r->rtm_src_len);
 		} else {
 			const char *hostname = format_host_rta_r(family, tb[RTA_SRC],
-					  b1, sizeof(b1));
+					  b2, sizeof(b2));
 			if (hostname)
 				strncpy(b1, hostname, sizeof(b1) - 1);
 		}
@@ -1353,6 +1379,8 @@ static int iproute_modify(int cmd, unsigned int flags, int argc, char **argv)
 
 				if (strcmp(*argv, "ecn") == 0)
 					features |= RTAX_FEATURE_ECN;
+				else if (strcmp(*argv, "tcp_usec_ts") == 0)
+					features |= RTAX_FEATURE_TCP_USEC_TS;
 				else
 					invarg("\"features\" value not valid\n", *argv);
 				break;
@@ -1981,6 +2009,7 @@ static int iproute_list_flush_or_save(int argc, char **argv, int action)
 	if (rtnl_dump_filter_errhndlr(&rth, filter_fn, stdout,
 				      save_route_errhndlr, NULL) < 0) {
 		fprintf(stderr, "Dump terminated\n");
+		delete_json_obj();
 		return -2;
 	}
 
@@ -2100,6 +2129,14 @@ static int iproute_get(int argc, char **argv)
 				invarg("Invalid \"ipproto\" value\n",
 				       *argv);
 			addattr8(&req.n, sizeof(req), RTA_IP_PROTO, ipproto);
+		} else if (strcmp(*argv, "flowlabel") == 0) {
+			__be32 flowlabel;
+
+			NEXT_ARG();
+			if (get_be32(&flowlabel, *argv, 0))
+				invarg("invalid flowlabel", *argv);
+			addattr32(&req.n, sizeof(req), RTA_FLOWLABEL,
+				  flowlabel);
 		} else {
 			inet_prefix addr;
 
@@ -2176,18 +2213,21 @@ static int iproute_get(int argc, char **argv)
 
 		if (print_route(answer, (void *)stdout) < 0) {
 			fprintf(stderr, "An error :-)\n");
+			delete_json_obj();
 			free(answer);
 			return -1;
 		}
 
 		if (answer->nlmsg_type != RTM_NEWROUTE) {
 			fprintf(stderr, "Not a route?\n");
+			delete_json_obj();
 			free(answer);
 			return -1;
 		}
 		len -= NLMSG_LENGTH(sizeof(*r));
 		if (len < 0) {
 			fprintf(stderr, "Wrong len %d\n", len);
+			delete_json_obj();
 			free(answer);
 			return -1;
 		}
@@ -2199,6 +2239,7 @@ static int iproute_get(int argc, char **argv)
 			r->rtm_src_len = 8*RTA_PAYLOAD(tb[RTA_PREFSRC]);
 		} else if (!tb[RTA_SRC]) {
 			fprintf(stderr, "Failed to connect the route\n");
+			delete_json_obj();
 			free(answer);
 			return -1;
 		}
@@ -2221,6 +2262,7 @@ static int iproute_get(int argc, char **argv)
 
 	if (print_route(answer, (void *)stdout) < 0) {
 		fprintf(stderr, "An error :-)\n");
+		delete_json_obj();
 		free(answer);
 		return -1;
 	}

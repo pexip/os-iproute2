@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 #include <stdio.h>
 #include <stdlib.h>
 #include <errno.h>
@@ -75,8 +76,8 @@ out:
 
 struct filter_check_t {
 	bool (*check)(void);
-	int checked:1,
-	    supported:1;
+	unsigned int checked:1,
+		supported:1;
 };
 
 static struct filter_check_t filter_checks[SSF__MAX] = {

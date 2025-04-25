@@ -1,13 +1,8 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * tc_core.c		TC core library.
  *
- *		This program is free software; you can redistribute it and/or
- *		modify it under the terms of the GNU General Public License
- *		as published by the Free Software Foundation; either version
- *		2 of the License, or (at your option) any later version.
- *
  * Authors:	Alexey Kuznetsov, <kuznet@ms2.inr.ac.ru>
- *
  */
 
 #include <stdio.h>
@@ -28,23 +23,14 @@
 static double tick_in_usec = 1;
 static double clock_factor = 1;
 
-int tc_core_time2big(unsigned int time)
+static unsigned int tc_core_time2tick(unsigned int time)
 {
-	__u64 t = time;
-
-	t *= tick_in_usec;
-	return (t >> 32) != 0;
-}
-
-
-unsigned int tc_core_time2tick(unsigned int time)
-{
-	return time*tick_in_usec;
+	return time * tick_in_usec;
 }
 
 unsigned int tc_core_tick2time(unsigned int tick)
 {
-	return tick/tick_in_usec;
+	return tick / tick_in_usec;
 }
 
 unsigned int tc_core_time2ktime(unsigned int time)
@@ -175,7 +161,7 @@ int tc_calc_rtable_64(struct tc_ratespec *r, __u32 *rtab,
 		rtab[i] = tc_calc_xmittime(bps, sz);
 	}
 
-	r->cell_align =  -1;
+	r->cell_align = -1;
 	r->cell_log = cell_log;
 	r->linklayer = (linklayer & TC_LINKLAYER_MASK);
 	return cell_log;

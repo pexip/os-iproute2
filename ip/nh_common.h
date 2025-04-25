@@ -13,12 +13,19 @@ struct nha_res_grp {
 	__u64			unbalanced_time;
 };
 
+struct nh_grp_stats {
+	__u32			nh_id;
+	__u64			packets;
+	__u64			packets_hw;
+};
+
 struct nh_entry {
 	struct hlist_node	nh_hash;
 
 	__u32			nh_id;
 	__u32			nh_oif;
 	__u32			nh_flags;
+	__u32			nh_resp_op_flags;
 	__u16			nh_grp_type;
 	__u8			nh_family;
 	__u8			nh_scope;
@@ -26,6 +33,10 @@ struct nh_entry {
 
 	bool			nh_blackhole;
 	bool			nh_fdb;
+
+	bool			nh_hw_stats_supported;
+	bool			nh_hw_stats_enabled;
+	bool			nh_hw_stats_used;
 
 	int			nh_gateway_len;
 	union {
@@ -44,6 +55,7 @@ struct nh_entry {
 
 	int			nh_groups_cnt;
 	struct nexthop_grp	*nh_groups;
+	struct nh_grp_stats	*nh_grp_stats;
 };
 
 void print_cache_nexthop_id(FILE *fp, const char *fp_prefix, const char *jsobj,

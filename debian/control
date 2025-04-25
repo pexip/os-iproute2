@@ -7,10 +7,12 @@ XSBC-Pexip-Original-Uploaders: Luca Boccassi <bluca@debian.org>
 Homepage: https://wiki.linuxfoundation.org/networking/iproute2
 Vcs-Browser: https://salsa.debian.org/kernel-team/iproute2
 Vcs-Git: https://salsa.debian.org/kernel-team/iproute2.git
-Standards-Version: 4.6.2
+Standards-Version: 4.7.2
 Rules-Requires-Root: no
 Build-Depends: bison,
                debhelper-compat (= 13),
+               dh-package-notes,
+               dh-sequence-movetousr,
                flex,
                libxtables-dev,
                libatm1-dev,
@@ -20,9 +22,10 @@ Build-Depends: bison,
                libdb-dev,
                libelf-dev,
                libmnl-dev,
+               libnsl-dev,
                libselinux1-dev,
                linux-libc-dev,
-               pkg-config,
+               pkgconf,
                po-debconf,
                zlib1g-dev,
 XS-Pexip-Upstream: http://deb.debian.org/debian/ trixie
@@ -31,11 +34,11 @@ Package: iproute2
 Priority: important
 Architecture: linux-any
 Provides: arpd
-Conflicts: arpd, iproute (<< 20130000-1)
-Replaces: iproute
+Conflicts: arpd
+Breaks: iproute2-doc
+Replaces: iproute2-doc
 Depends: ${misc:Depends}, ${shlibs:Depends}, libcap2-bin,
-Recommends: ${ipmods:Recommends}
-Suggests: iproute2-doc, python3:any
+Suggests: python3:any
 Multi-Arch: foreign
 Description: networking and traffic control tools
  The iproute2 suite is a collection of utilities for networking and
@@ -44,16 +47,3 @@ Description: networking and traffic control tools
  These tools communicate with the Linux kernel via the (rt)netlink
  interface, providing advanced features not available through the
  legacy net-tools commands 'ifconfig' and 'route'.
-
-Package: iproute2-doc
-Section: doc
-Architecture: all
-Conflicts: iproute-doc (<< 20130000-1)
-Replaces: iproute-doc
-Depends: ${misc:Depends}
-Multi-Arch: foreign
-Description: networking and traffic control tools - documentation
- The iproute2 suite is a collection of utilities for networking and
- traffic control.
- .
- This package contains the documentation for iproute.

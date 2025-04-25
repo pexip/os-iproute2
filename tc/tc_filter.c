@@ -1,13 +1,8 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * tc_filter.c		"tc filter".
  *
- *		This program is free software; you can redistribute it and/or
- *		modify it under the terms of the GNU General Public License
- *		as published by the Free Software Foundation; either version
- *		2 of the License, or (at your option) any later version.
- *
  * Authors:	Alexey Kuznetsov, <kuznet@ms2.inr.ac.ru>
- *
  */
 
 #include <stdio.h>
@@ -40,7 +35,7 @@ static void usage(void)
 		"       tc filter show [ dev STRING ] [ root | ingress | egress | parent CLASSID ]\n"
 		"       tc filter show [ block BLOCK_INDEX ]\n"
 		"Where:\n"
-		"FILTER_TYPE := { rsvp | u32 | bpf | fw | route | etc. }\n"
+		"FILTER_TYPE := { u32 | bpf | fw | route | etc. }\n"
 		"FILTERID := ... format depends on classifier, see there\n"
 		"OPTIONS := ... try tc filter add <desired FILTER_KIND> help\n");
 }
@@ -70,17 +65,18 @@ static int tc_filter_modify(int cmd, unsigned int flags, int argc, char **argv)
 		.n.nlmsg_type = cmd,
 		.t.tcm_family = AF_UNSPEC,
 	};
-	struct filter_util *q = NULL;
+	const struct filter_util *q = NULL;
 	__u32 prio = 0;
 	__u32 protocol = 0;
 	int protocol_set = 0;
 	__u32 block_index = 0;
-	__u32 chain_index;
+	__u32 chain_index = 0;
 	int chain_index_set = 0;
 	char *fhandle = NULL;
 	char  d[IFNAMSIZ] = {};
 	char  k[FILTER_NAMESZ] = {};
 	struct tc_estimator est = {};
+	int ret;
 
 	if (cmd == RTM_NEWTFILTER && flags & NLM_F_CREATE)
 		protocol = htons(ETH_P_ALL);
@@ -226,7 +222,12 @@ static int tc_filter_modify(int cmd, unsigned int flags, int argc, char **argv)
 	if (est.ewma_log)
 		addattr_l(&req.n, sizeof(req), TCA_RATE, &est, sizeof(est));
 
-	if (rtnl_talk(&rth, &req.n, NULL) < 0) {
+	if (echo_request)
+		ret = rtnl_echo_talk(&rth, &req.n, json, print_filter);
+	else
+		ret = rtnl_talk(&rth, &req.n, NULL);
+
+	if (ret < 0) {
 		fprintf(stderr, "We have an error talking to the kernel\n");
 		return 2;
 	}
@@ -249,7 +250,7 @@ int print_filter(struct nlmsghdr *n, void *arg)
 	struct tcmsg *t = NLMSG_DATA(n);
 	int len = n->nlmsg_len;
 	struct rtattr *tb[TCA_MAX+1];
-	struct filter_util *q;
+	const struct filter_util *q;
 	char abuf[256];
 
 	if (n->nlmsg_type != RTM_NEWTFILTER &&
@@ -371,6 +372,7 @@ int print_filter(struct nlmsghdr *n, void *arg)
 		print_nl();
 	}
 
+	print_ext_msg(tb);
 	close_json_object();
 	fflush(fp);
 	return 0;
@@ -396,7 +398,7 @@ static int tc_filter_get(int cmd, unsigned int flags, int argc, char **argv)
 		.t.tcm_family = AF_UNSPEC,
 	};
 	struct nlmsghdr *answer;
-	struct filter_util *q = NULL;
+	const struct filter_util *q = NULL;
 	__u32 prio = 0;
 	__u32 protocol = 0;
 	int protocol_set = 0;
@@ -598,7 +600,6 @@ static int tc_filter_list(int cmd, int argc, char **argv)
 	char d[IFNAMSIZ] = {};
 	__u32 prio = 0;
 	__u32 protocol = 0;
-	__u32 chain_index;
 	__u32 block_index = 0;
 	char *fhandle = NULL;
 
@@ -680,6 +681,8 @@ static int tc_filter_list(int cmd, int argc, char **argv)
 			protocol = res;
 			filter_protocol = protocol;
 		} else if (matches(*argv, "chain") == 0) {
+			__u32 chain_index;
+
 			NEXT_ARG();
 			if (filter_chain_index_set)
 				duparg("chain", *argv);
@@ -719,7 +722,7 @@ static int tc_filter_list(int cmd, int argc, char **argv)
 	}
 
 	if (filter_chain_index_set)
-		addattr32(&req.n, sizeof(req), TCA_CHAIN, chain_index);
+		addattr32(&req.n, sizeof(req), TCA_CHAIN, filter_chain_index);
 
 	if (brief) {
 		struct nla_bitfield32 flags = {
@@ -738,6 +741,7 @@ static int tc_filter_list(int cmd, int argc, char **argv)
 	new_json_obj(json);
 	if (rtnl_dump_filter(&rth, print_filter, stdout) < 0) {
 		fprintf(stderr, "Dump terminated\n");
+		delete_json_obj();
 		return 1;
 	}
 	delete_json_obj();

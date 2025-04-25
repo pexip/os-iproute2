@@ -1,13 +1,8 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * tc_util.c		Misc TC utility functions.
  *
- *		This program is free software; you can redistribute it and/or
- *		modify it under the terms of the GNU General Public License
- *		as published by the Free Software Foundation; either version
- *		2 of the License, or (at your option) any later version.
- *
  * Authors:	Alexey Kuznetsov, <kuznet@ms2.inr.ac.ru>
- *
  */
 
 #include <stdio.h>
@@ -33,7 +28,8 @@
 
 static struct db_names *cls_names;
 
-#define NAMES_DB "/etc/iproute2/tc_cls"
+#define NAMES_DB_USR CONF_USR_DIR "/tc_cls"
+#define NAMES_DB_ETC CONF_ETC_DIR "/tc_cls"
 
 int cls_names_init(char *path)
 {
@@ -43,11 +39,18 @@ int cls_names_init(char *path)
 	if (!cls_names)
 		return -1;
 
-	ret = db_names_load(cls_names, path ?: NAMES_DB);
-	if (ret == -ENOENT && path) {
-		fprintf(stderr, "Can't open class names file: %s\n", path);
-		return -1;
+	if (path) {
+		ret = db_names_load(cls_names, path);
+		if (ret == -ENOENT) {
+			fprintf(stderr, "Can't open class names file: %s\n", path);
+			return -1;
+		}
 	}
+
+	ret = db_names_load(cls_names, NAMES_DB_ETC);
+	if (ret == -ENOENT)
+		ret = db_names_load(cls_names, NAMES_DB_USR);
+
 	if (ret) {
 		db_names_free(cls_names);
 		cls_names = NULL;
@@ -254,11 +257,6 @@ tc_print_rate(enum output_type t, const char *key, const char *fmt,
 	print_rate(use_iec, t, key, fmt, rate);
 }
 
-char *sprint_ticks(__u32 ticks, char *buf)
-{
-	return sprint_time(tc_core_tick2time(ticks), buf);
-}
-
 int get_size_and_cell(unsigned int *size, int *cell_log, char *str)
 {
 	char *slash = strchr(str, '/');
@@ -463,7 +461,7 @@ static int parse_action_control_slash_spaces(int *argc_p, char ***argv_p,
 {
 	int argc = *argc_p;
 	char **argv = *argv_p;
-	int result1 = -1, result2;
+	int result1 = -1, result2 = -1;
 	int *result_p = &result1;
 	int ok = 0;
 	int ret;
@@ -476,7 +474,7 @@ static int parse_action_control_slash_spaces(int *argc_p, char ***argv_p,
 			result_p = &result2;
 			NEXT_ARG();
 			/* fall-through */
-		case 0: 
+		case 0:
 			ret = parse_action_control(&argc, &argv,
 						   result_p, allow_num);
 			if (ret)
@@ -536,8 +534,7 @@ int parse_action_control_slash(int *argc_p, char ***argv_p,
 	return 0;
 }
 
-void print_action_control(FILE *f, const char *prefix,
-			  int action, const char *suffix)
+void print_action_control(const char *prefix, int action, const char *suffix)
 {
 	print_string(PRINT_FP, NULL, "%s", prefix);
 	open_json_object("control_action");
@@ -593,7 +590,61 @@ char *sprint_linklayer(unsigned int linklayer, char *buf)
 	return buf;
 }
 
-void print_tm(FILE *f, const struct tcf_t *tm)
+/*
+ * Limited list of clockid's
+ * Since these are the ones the kernel qdisc can use
+ * because they are available via ktim_get
+ */
+static const struct clockid_table {
+	const char *name;
+	clockid_t clockid;
+} clockt_map[] = {
+#ifdef CLOCK_BOOTTIME
+	{ "BOOTTIME", CLOCK_BOOTTIME },
+#endif
+#ifdef CLOCK_MONOTONIC
+	{ "MONOTONIC", CLOCK_MONOTONIC },
+#endif
+#ifdef CLOCK_REALTIME
+	{ "REALTIME", CLOCK_REALTIME },
+#endif
+#ifdef CLOCK_TAI
+	{ "TAI", CLOCK_TAI },
+#endif
+	{ NULL }
+};
+
+int get_clockid(__s32 *val, const char *arg)
+{
+	const struct clockid_table *c;
+
+	/* skip prefix if present */
+	if (strcasestr(arg, "CLOCK_") != NULL)
+		arg += sizeof("CLOCK_") - 1;
+
+	for (c = clockt_map; c->name; c++) {
+		if (strcasecmp(c->name, arg) == 0) {
+			*val = c->clockid;
+			return 0;
+		}
+	}
+
+	return -1;
+}
+
+const char *get_clock_name(clockid_t clockid)
+{
+	const struct clockid_table *c;
+
+	for (c = clockt_map; c->name; c++) {
+		if (clockid == c->clockid)
+			return c->name;
+	}
+
+	return "invalid";
+}
+
+void print_tm(const struct tcf_t *tm)
 {
 	int hz = get_user_hz();
 
@@ -652,8 +703,7 @@ static void print_tcstats_basic_hw(struct rtattr **tbs, const char *prefix)
 	print_uint(PRINT_ANY, "hw_packets", " %u pkt", bs_hw.packets);
 }
 
-void print_tcstats2_attr(FILE *fp, struct rtattr *rta,
-			 const char *prefix, struct rtattr **xstats)
+void print_tcstats2_attr(struct rtattr *rta, const char *prefix, struct rtattr **xstats)
 {
 	struct rtattr *tbs[TCA_STATS_MAX + 1];
 
@@ -734,7 +784,7 @@ void print_tcstats_attr(FILE *fp, struct rtattr *tb[], const char *prefix,
 			struct rtattr **xstats)
 {
 	if (tb[TCA_STATS2]) {
-		print_tcstats2_attr(fp, tb[TCA_STATS2], prefix, xstats);
+		print_tcstats2_attr(tb[TCA_STATS2], prefix, xstats);
 		if (xstats && !*xstats)
 			goto compat_xstats;
 		return;
@@ -747,28 +797,30 @@ void print_tcstats_attr(FILE *fp, struct rtattr *tb[], const char *prefix,
 		memcpy(&st, RTA_DATA(tb[TCA_STATS]),
 		       MIN(RTA_PAYLOAD(tb[TCA_STATS]), sizeof(st)));
 
-		fprintf(fp,
-			"%sSent %llu bytes %u pkts (dropped %u, overlimits %u) ",
-			prefix, (unsigned long long)st.bytes,
-			st.packets, st.drops, st.overlimits);
+		print_string(PRINT_FP, NULL, "%s", prefix);
+		print_lluint(PRINT_ANY, "bytes", "Sent %llu bytes",
+			     (unsigned long long)st.bytes);
+		print_uint(PRINT_ANY, "packets", " %u pkts", st.packets);
+		print_uint(PRINT_ANY, "dropped", " (dropped %u,", st.drops);
+		print_uint(PRINT_ANY, "overlimits", " overlimits %u) ", st.overlimits);
 
 		if (st.bps || st.pps || st.qlen || st.backlog) {
-			fprintf(fp, "\n%s", prefix);
+			print_nl();
+			print_string(PRINT_FP, NULL, "%s", prefix);
+
 			if (st.bps || st.pps) {
-				fprintf(fp, "rate ");
+				print_string(PRINT_FP, NULL, "rate ", NULL);
 				if (st.bps)
-					tc_print_rate(PRINT_FP, NULL, "%s ",
-						      st.bps);
+					tc_print_rate(PRINT_ANY, "rate", "%s ", st.bps);
 				if (st.pps)
-					fprintf(fp, "%upps ", st.pps);
+					print_uint(PRINT_ANY, "pps", "%upps ", st.pps);
 			}
 			if (st.qlen || st.backlog) {
-				fprintf(fp, "backlog ");
+				print_string(PRINT_FP, NULL, "backlog ", NULL);
 				if (st.backlog)
-					print_size(PRINT_FP, NULL, "%s ",
-						   st.backlog);
+					print_size(PRINT_ANY, "backlog", "%s ", st.backlog);
 				if (st.qlen)
-					fprintf(fp, "%up ", st.qlen);
+					print_uint(PRINT_ANY, "qlen", "%up ", st.qlen);
 			}
 		}
 	}
@@ -847,4 +899,13 @@ void print_masked_be16(const char *name, struct rtattr *attr,
 {
 	print_masked_type(UINT16_MAX, __rta_getattr_be16_u32, name, attr,
 			  mask_attr, newline);
+}
+
+void print_ext_msg(struct rtattr **tb)
+{
+	if (!tb[TCA_EXT_WARN_MSG])
+		return;
+
+	print_string(PRINT_ANY, "warn", "%s", rta_getattr_str(tb[TCA_EXT_WARN_MSG]));
+	print_nl();
 }

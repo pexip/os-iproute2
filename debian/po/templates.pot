@@ -44,7 +44,7 @@ msgid ""
 "dropped capabilities then it could be used by an attacker to gain root "
 "permissions. It's up to you to decide about the trade-offs and select the "
 "best setting for your system. This will give cap_dac_override, cap_net_admin "
-"and cap_sys_admin to /bin/ip."
+"and cap_bpf to /bin/ip."
 msgstr ""
 
 #. Type: boolean

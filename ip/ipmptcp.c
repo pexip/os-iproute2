@@ -58,6 +58,7 @@ static const struct {
 	{ "subflow",		MPTCP_PM_ADDR_FLAG_SUBFLOW },
 	{ "backup",		MPTCP_PM_ADDR_FLAG_BACKUP },
 	{ "fullmesh",		MPTCP_PM_ADDR_FLAG_FULLMESH },
+	{ "implicit",		MPTCP_PM_ADDR_FLAG_IMPLICIT },
 	{ "nobackup",		MPTCP_PM_ADDR_FLAG_NONE },
 	{ "nofullmesh",		MPTCP_PM_ADDR_FLAG_NONE }
 };
@@ -173,6 +174,8 @@ static int mptcp_parse_opt(int argc, char **argv, struct nlmsghdr *n, int cmd)
 			invarg("invalid for non-zero id address\n", "ADDRESS");
 		else if (!id && !addr_set)
 			invarg("address is needed for deleting id 0 address\n", "ID");
+	} else if (id_set && !deling && !id) {
+		invarg("cannot be 0\n", "ID");
 	}
 
 	if (adding && port && !(flags & MPTCP_PM_ADDR_FLAG_SIGNAL))
@@ -454,6 +457,8 @@ static const char * const event_to_str[] = {
 	[MPTCP_EVENT_SUB_ESTABLISHED] = "SF_ESTABLISHED",
 	[MPTCP_EVENT_SUB_CLOSED] = "SF_CLOSED",
 	[MPTCP_EVENT_SUB_PRIORITY] = "SF_PRIO",
+	[MPTCP_EVENT_LISTENER_CREATED] = "LISTENER_CREATED",
+	[MPTCP_EVENT_LISTENER_CLOSED] = "LISTENER_CLOSED",
 };
 
 static void print_addr(const char *key, int af, struct rtattr *value)
@@ -492,11 +497,12 @@ static int mptcp_monitor_msg(struct rtnl_ctrl_data *ctrl,
 		goto out;
 	}
 
-	printf("[%14s]", event_to_str[ghdr->cmd]);
+	printf("[%16s]", event_to_str[ghdr->cmd]);
 
 	parse_rtattr(tb, MPTCP_ATTR_MAX, (void *) ghdr + GENL_HDRLEN, len);
 
-	printf(" token=%08x", rta_getattr_u32(tb[MPTCP_ATTR_TOKEN]));
+	if (tb[MPTCP_ATTR_TOKEN])
+		printf(" token=%08x", rta_getattr_u32(tb[MPTCP_ATTR_TOKEN]));
 
 	if (tb[MPTCP_ATTR_REM_ID])
 		printf(" remid=%u", rta_getattr_u8(tb[MPTCP_ATTR_REM_ID]));

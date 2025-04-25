@@ -14,7 +14,7 @@ _Description: Allow ordinary users to run ip vrf exec using capabilities?
  then it could be used by an attacker to gain root permissions.
  It's up to you to decide about the trade-offs and select the best setting for your
  system.
- This will give cap_dac_override, cap_net_admin and cap_sys_admin to /bin/ip.
+ This will give cap_dac_override, cap_net_admin and cap_bpf to /bin/ip.
  .
  More information about VRF can be found at:
  https://www.kernel.org/doc/Documentation/networking/vrf.txt

@@ -1,13 +1,8 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * tc_monitor.c		"tc monitor".
  *
- *		This program is free software; you can redistribute it and/or
- *		modify it under the terms of the GNU General Public License
- *		as published by the Free Software Foundation; either version
- *		2 of the License, or (at your option) any later version.
- *
  * Authors:	Jamal Hadi Salim
- *
  */
 
 #include <stdio.h>
@@ -41,9 +36,6 @@ static int accept_tcmsg(struct rtnl_ctrl_data *ctrl,
 
 	if (timestamp)
 		print_timestamp(fp);
-
-	if (n->nlmsg_type == NLMSG_DONE)
-		nl_dump_ext_ack_done(n, 0, 0);
 
 	if (n->nlmsg_type == RTM_NEWTFILTER ||
 	    n->nlmsg_type == RTM_DELTFILTER ||

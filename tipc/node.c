@@ -1,10 +1,6 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * node.c	TIPC node functionality.
- *
- *		This program is free software; you can redistribute it and/or
- *		modify it under the terms of the GNU General Public License
- *		as published by the Free Software Foundation; either version
- *		2 of the License, or (at your option) any later version.
  *
  * Authors:	Richard Alpe <richard.alpe@ericsson.com>
  */
@@ -256,7 +252,7 @@ get_ops:
 	/* Get master key indication */
 	opt_master = get_opt(opts, "master");
 
-	/* Sanity check if wrong option */
+	/* Validate node key */
 	if (opt_nodeid && opt_master) {
 		fprintf(stderr, "error, per-node key cannot be master\n");
 		return -EINVAL;

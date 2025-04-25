@@ -1,6 +1,7 @@
 Author: Alexander Wirt <formorer@debian.org>
 Description: Add moo feature
-Forwarded: no, critical value-add business feature for Debian
+ critical value-add business feature for Debian
+Forwarded: not-needed
 --- a/ip/ip.c
 +++ b/ip/ip.c
 @@ -87,6 +87,19 @@

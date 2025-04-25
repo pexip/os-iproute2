@@ -1,13 +1,8 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * m_sample.c		ingress/egress packet sampling module
  *
- *		This program is free software; you can distribute it and/or
- *		modify it under the terms of the GNU General Public License
- *		as published by the Free Software Foundation; either version
- *		2 of the License, or (at your option) any later version.
- *
  * Authors:	Yotam Gigi <yotamg@mellanox.com>
- *
  */
 
 #include <stdio.h>
@@ -36,7 +31,7 @@ static void usage(void)
 	exit(-1);
 }
 
-static int parse_sample(struct action_util *a, int *argc_p, char ***argv_p,
+static int parse_sample(const struct action_util *a, int *argc_p, char ***argv_p,
 			int tca_id, struct nlmsghdr *n)
 {
 	struct tc_sample p = { 0 };
@@ -50,11 +45,8 @@ static int parse_sample(struct action_util *a, int *argc_p, char ***argv_p,
 	__u32 group;
 	__u32 rate;
 
-	if (argc <= 1) {
-		fprintf(stderr, "sample bad argument count %d\n", argc);
-		usage();
-		return -1;
-	}
+	if (argc <= 1)
+		missarg("sample count");
 
 	if (matches(*argv, "sample") == 0) {
 		NEXT_ARG();
@@ -138,7 +130,7 @@ static int parse_sample(struct action_util *a, int *argc_p, char ***argv_p,
 	return 0;
 }
 
-static int print_sample(struct action_util *au, FILE *f, struct rtattr *arg)
+static int print_sample(const struct action_util *au, FILE *f, struct rtattr *arg)
 {
 	struct rtattr *tb[TCA_SAMPLE_MAX + 1];
 	struct tc_sample *p;
@@ -165,7 +157,7 @@ static int print_sample(struct action_util *au, FILE *f, struct rtattr *arg)
 		print_uint(PRINT_ANY, "trunc_size", " trunc_size %u",
 			   rta_getattr_u32(tb[TCA_SAMPLE_TRUNC_SIZE]));
 
-	print_action_control(f, " ", p->action, "");
+	print_action_control(" ", p->action, "");
 
 	print_nl();
 	print_uint(PRINT_ANY, "index", "\t index %u", p->index);
@@ -176,7 +168,7 @@ static int print_sample(struct action_util *au, FILE *f, struct rtattr *arg)
 		if (tb[TCA_SAMPLE_TM]) {
 			struct tcf_t *tm = RTA_DATA(tb[TCA_SAMPLE_TM]);
 
-			print_tm(f, tm);
+			print_tm(tm);
 		}
 	}
 	print_nl();

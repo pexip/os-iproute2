@@ -1,10 +1,6 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * ipmacsec.c		"ip macsec".
- *
- *		This program is free software; you can redistribute it and/or
- *		modify it under the terms of the GNU General Public License
- *		as published by the Free Software Foundation; either version
- *		2 of the License, or (at your option) any later version.
  *
  * Authors:	Sabrina Dubroca <sd@queasysnail.net>
  */
@@ -942,8 +938,8 @@ static void print_tx_sc(const char *prefix, __u64 sci, __u8 encoding_sa,
 		print_uint(PRINT_ANY, "an", "%d:",
 			   rta_getattr_u8(sa_attr[MACSEC_SA_ATTR_AN]));
 		if (is_xpn) {
-			print_uint(PRINT_ANY, "pn", " PN %u,",
-				   rta_getattr_u64(sa_attr[MACSEC_SA_ATTR_PN]));
+			print_lluint(PRINT_ANY, "pn", " PN %llu,",
+				     rta_getattr_u64(sa_attr[MACSEC_SA_ATTR_PN]));
 			print_0xhex(PRINT_ANY, "ssci",
 				    "SSCI %08x",
 				    ntohl(rta_getattr_u32(sa_attr[MACSEC_SA_ATTR_SSCI])));
@@ -1019,8 +1015,8 @@ static void print_rx_sc(const char *prefix, __be64 sci, __u8 active,
 		print_uint(PRINT_ANY, "an", "%u:",
 			   rta_getattr_u8(sa_attr[MACSEC_SA_ATTR_AN]));
 		if (is_xpn) {
-			print_uint(PRINT_ANY, "pn", " PN %u,",
-				   rta_getattr_u64(sa_attr[MACSEC_SA_ATTR_PN]));
+			print_lluint(PRINT_ANY, "pn", " PN %llu,",
+				     rta_getattr_u64(sa_attr[MACSEC_SA_ATTR_PN]));
 			print_0xhex(PRINT_ANY, "ssci",
 				    "SSCI %08x",
 				    ntohl(rta_getattr_u32(sa_attr[MACSEC_SA_ATTR_SSCI])));
@@ -1383,10 +1379,10 @@ static int macsec_parse_opt(struct link_util *lu, int argc, char **argv,
 			if (strcmp(*argv, "default") == 0)
 				cipher.id = MACSEC_DEFAULT_CIPHER_ID;
 			else if (strcmp(*argv, "gcm-aes-128") == 0 ||
-			         strcmp(*argv, "GCM-AES-128") == 0)
+				 strcmp(*argv, "GCM-AES-128") == 0)
 				cipher.id = MACSEC_CIPHER_ID_GCM_AES_128;
 			else if (strcmp(*argv, "gcm-aes-256") == 0 ||
-			         strcmp(*argv, "GCM-AES-256") == 0)
+				 strcmp(*argv, "GCM-AES-256") == 0)
 				cipher.id = MACSEC_CIPHER_ID_GCM_AES_256;
 			else if (strcmp(*argv, "gcm-aes-xpn-128") == 0 ||
 				 strcmp(*argv, "GCM-AES-XPN-128") == 0)
@@ -1461,8 +1457,10 @@ static int macsec_parse_opt(struct link_util *lu, int argc, char **argv,
 				invarg("expected replay window size", *argv);
 		} else if (strcmp(*argv, "validate") == 0) {
 			NEXT_ARG();
-			validate = parse_one_of("validate", *argv, validate_str,
-						ARRAY_SIZE(validate_str), &ret);
+			validate = parse_one_of_deprecated("validate", *argv,
+							   validate_str,
+							   ARRAY_SIZE(validate_str),
+							   &ret);
 			if (ret != 0)
 				return ret;
 			addattr8(n, MACSEC_BUFLEN,
@@ -1517,7 +1515,8 @@ static int macsec_parse_opt(struct link_util *lu, int argc, char **argv,
 			  &cipher.icv_len, sizeof(cipher.icv_len));
 
 	if (replay_protect != -1) {
-		addattr32(n, MACSEC_BUFLEN, IFLA_MACSEC_WINDOW, window);
+		if (replay_protect)
+			addattr32(n, MACSEC_BUFLEN, IFLA_MACSEC_WINDOW, window);
 		addattr8(n, MACSEC_BUFLEN, IFLA_MACSEC_REPLAY_PROTECT,
 			 replay_protect);
 	}

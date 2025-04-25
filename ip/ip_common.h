@@ -7,8 +7,6 @@
 
 #include "json_print.h"
 
-extern int use_iec;
-
 struct link_filter {
 	int ifindex;
 	int family;
@@ -18,6 +16,7 @@ struct link_filter {
 	int scope, scopemask;
 	int flags, flagmask;
 	int up;
+	int down;
 	char *label;
 	int flushed;
 	char *flushb;
@@ -28,6 +27,9 @@ struct link_filter {
 	char *kind;
 	char *slave_kind;
 	int target_nsid;
+	bool have_proto;
+	int proto;
+	int vfinfo;
 };
 
 const char *get_ip_lib_dir(void);
@@ -60,8 +62,6 @@ void netns_nsid_socket_init(void);
 int print_nsid(struct nlmsghdr *n, void *arg);
 int ipstats_print(struct nlmsghdr *n, void *arg);
 char *get_name_from_nsid(int nsid);
-int get_netnsid_from_name(const char *name);
-int set_netnsid_from_name(const char *name, int nsid);
 int do_ipaddr(int argc, char **argv);
 int do_ipaddrlabel(int argc, char **argv);
 int do_iproute(int argc, char **argv);
@@ -220,15 +220,13 @@ int ipstats_stat_desc_show_xstats(struct ipstats_stat_show_attrs *attrs,
 #define     LABEL_MAX_MASK          0xFFFFFU
 #endif
 
-void print_num(FILE *fp, unsigned int width, uint64_t count);
 void print_rt_flags(FILE *fp, unsigned int flags);
 void print_rta_ifidx(FILE *fp, __u32 ifidx, const char *prefix);
 void __print_rta_gateway(FILE *fp, unsigned char family, const char *gateway);
-void print_rta_gateway(FILE *fp, unsigned char family,
-		       const struct rtattr *rta);
 void size_columns(unsigned int cols[], unsigned int n, ...);
 void print_stats64(FILE *fp, struct rtnl_link_stats64 *s,
 		   const struct rtattr *carrier_changes, const char *what);
 void print_mpls_link_stats(FILE *fp, const struct mpls_link_stats *stats,
 			   const char *indent);
+void print_headers(FILE *fp, const char *label);
 #endif /* _IP_COMMON_H_ */

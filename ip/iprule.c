@@ -1,13 +1,8 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * iprule.c		"ip rule".
  *
- *		This program is free software; you can redistribute it and/or
- *		modify it under the terms of the GNU General Public License
- *		as published by the Free Software Foundation; either version
- *		2 of the License, or (at your option) any later version.
- *
  * Authors:	Alexey Kuznetsov, <kuznet@ms2.inr.ac.ru>
- *
  */
 
 #include <stdio.h>
@@ -51,6 +46,7 @@ static void usage(void)
 		"            [ ipproto PROTOCOL ]\n"
 		"            [ sport [ NUMBER | NUMBER-NUMBER ]\n"
 		"            [ dport [ NUMBER | NUMBER-NUMBER ] ]\n"
+		"            [ dscp DSCP ] [ flowlabel FLOWLABEL[/MASK] ]\n"
 		"ACTION := [ table TABLE_ID ]\n"
 		"          [ protocol PROTO ]\n"
 		"          [ nat ADDRESS ]\n"
@@ -72,6 +68,8 @@ static struct
 	unsigned int tos, tosmask;
 	unsigned int pref, prefmask;
 	unsigned int fwmark, fwmask;
+	unsigned int dscp, dscpmask;
+	__u32 flowlabel, flowlabel_mask;
 	uint64_t tun_id;
 	char iif[IFNAMSIZ];
 	char oif[IFNAMSIZ];
@@ -224,6 +222,30 @@ static bool filter_nlmsg(struct nlmsghdr *n, struct rtattr **tb, int host_len)
 		}
 	}
 
+	if (filter.dscpmask) {
+		if (tb[FRA_DSCP]) {
+			__u8 dscp = rta_getattr_u8(tb[FRA_DSCP]);
+
+			if (filter.dscp != dscp)
+				return false;
+		} else {
+			return false;
+		}
+	}
+
+	if (filter.flowlabel_mask) {
+		__u32 flowlabel, flowlabel_mask;
+
+		if (!tb[FRA_FLOWLABEL] || !tb[FRA_FLOWLABEL_MASK])
+			return false;
+		flowlabel = rta_getattr_be32(tb[FRA_FLOWLABEL]);
+		flowlabel_mask = rta_getattr_be32(tb[FRA_FLOWLABEL_MASK]);
+
+		if (filter.flowlabel != flowlabel ||
+		    filter.flowlabel_mask != flowlabel_mask)
+			return false;
+	}
+
 	table = frh_get_table(frh, tb);
 	if (filter.tb > 0 && filter.tb ^ table)
 		return false;
@@ -254,6 +276,8 @@ int print_rule(struct nlmsghdr *n, void *arg)
 
 	if (!filter_nlmsg(n, tb, host_len))
 		return 0;
+
+	print_headers(fp, "[RULE]");
 
 	open_json_object(NULL);
 	if (n->nlmsg_type == RTM_DELRULE)
@@ -471,6 +495,31 @@ int print_rule(struct nlmsghdr *n, void *arg)
 				     rtnl_rtprot_n2a(protocol, b1, sizeof(b1)));
 		}
 	}
+
+	if (tb[FRA_DSCP]) {
+		__u8 dscp = rta_getattr_u8(tb[FRA_DSCP]);
+
+		print_string(PRINT_ANY, "dscp", " dscp %s",
+			     rtnl_dscp_n2a(dscp, b1, sizeof(b1)));
+	}
+
+	/* The kernel will either provide both attributes, or none */
+	if (tb[FRA_FLOWLABEL] && tb[FRA_FLOWLABEL_MASK]) {
+		__u32 flowlabel, flowlabel_mask;
+
+		flowlabel = rta_getattr_be32(tb[FRA_FLOWLABEL]);
+		flowlabel_mask = rta_getattr_be32(tb[FRA_FLOWLABEL_MASK]);
+
+		print_0xhex(PRINT_ANY, "flowlabel", " flowlabel %#llx",
+			    flowlabel);
+		if (flowlabel_mask == LABEL_MAX_MASK)
+			print_0xhex(PRINT_JSON, "flowlabel_mask", NULL,
+				    flowlabel_mask);
+		else
+			print_0xhex(PRINT_ANY, "flowlabel_mask", "/%#llx",
+				    flowlabel_mask);
+	}
+
 	print_string(PRINT_FP, NULL, "\n", "");
 	close_json_object();
 	fflush(fp);
@@ -549,6 +598,24 @@ static int flush_rule(struct nlmsghdr *n, void *arg)
 	}
 
 	return 0;
+}
+
+static void iprule_flowlabel_parse(char *arg, __u32 *flowlabel,
+				   __u32 *flowlabel_mask)
+{
+	char *slash;
+
+	slash = strchr(arg, '/');
+	if (slash != NULL)
+		*slash = '\0';
+	if (get_u32(flowlabel, arg, 0))
+		invarg("invalid flowlabel", arg);
+	if (slash) {
+		if (get_u32(flowlabel_mask, slash + 1, 0))
+			invarg("invalid flowlabel mask", slash + 1);
+	} else {
+		*flowlabel_mask = LABEL_MAX_MASK;
+	}
 }
 
 static int iprule_list_flush_or_save(int argc, char **argv, int action)
@@ -700,7 +767,20 @@ static int iprule_list_flush_or_save(int argc, char **argv, int action)
 			else if (ret != 2)
 				invarg("invalid dport range\n", *argv);
 			filter.dport = r;
-		} else{
+		} else if (strcmp(*argv, "dscp") == 0) {
+			__u32 dscp;
+
+			NEXT_ARG();
+			if (rtnl_dscp_a2n(&dscp, *argv))
+				invarg("invalid dscp\n", *argv);
+			filter.dscp = dscp;
+			filter.dscpmask = 1;
+		} else if (strcmp(*argv, "flowlabel") == 0) {
+			NEXT_ARG();
+
+			iprule_flowlabel_parse(*argv, &filter.flowlabel,
+					       &filter.flowlabel_mask);
+		} else {
 			if (matches(*argv, "dst") == 0 ||
 			    matches(*argv, "to") == 0) {
 				NEXT_ARG();
@@ -719,6 +799,7 @@ static int iprule_list_flush_or_save(int argc, char **argv, int action)
 	new_json_obj(json);
 	if (rtnl_dump_filter(&rth, filter_fn, stdout) < 0) {
 		fprintf(stderr, "Dump terminated\n");
+		delete_json_obj();
 		return 1;
 	}
 	delete_json_obj();
@@ -977,6 +1058,23 @@ static int iprule_modify(int cmd, int argc, char **argv)
 				invarg("invalid dport range\n", *argv);
 			addattr_l(&req.n, sizeof(req), FRA_DPORT_RANGE, &r,
 				  sizeof(r));
+		} else if (strcmp(*argv, "dscp") == 0) {
+			__u32 dscp;
+
+			NEXT_ARG();
+			if (rtnl_dscp_a2n(&dscp, *argv))
+				invarg("invalid dscp\n", *argv);
+			addattr8(&req.n, sizeof(req), FRA_DSCP, dscp);
+		} else if (strcmp(*argv, "flowlabel") == 0) {
+			__u32 flowlabel, flowlabel_mask;
+
+			NEXT_ARG();
+			iprule_flowlabel_parse(*argv, &flowlabel,
+					       &flowlabel_mask);
+			addattr32(&req.n, sizeof(req), FRA_FLOWLABEL,
+				  htonl(flowlabel));
+			addattr32(&req.n, sizeof(req), FRA_FLOWLABEL_MASK,
+				  htonl(flowlabel_mask));
 		} else {
 			int type;
 

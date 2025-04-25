@@ -7,7 +7,9 @@ DCBOBJ = dcb.o \
          dcb_dcbx.o \
          dcb_ets.o \
          dcb_maxrate.o \
-         dcb_pfc.o
+         dcb_pfc.o \
+         dcb_apptrust.o \
+         dcb_rewr.o
 TARGETS += dcb
 LDLIBS += -lm
 

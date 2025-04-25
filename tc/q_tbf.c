@@ -1,13 +1,8 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * q_tbf.c		TBF.
  *
- *		This program is free software; you can redistribute it and/or
- *		modify it under the terms of the GNU General Public License
- *		as published by the Free Software Foundation; either version
- *		2 of the License, or (at your option) any later version.
- *
  * Authors:	Alexey Kuznetsov, <kuznet@ms2.inr.ac.ru>
- *
  */
 
 #include <stdio.h>
@@ -36,10 +31,9 @@ static void explain1(const char *arg, const char *val)
 }
 
 
-static int tbf_parse_opt(struct qdisc_util *qu, int argc, char **argv,
+static int tbf_parse_opt(const struct qdisc_util *qu, int argc, char **argv,
 			 struct nlmsghdr *n, const char *dev)
 {
-	int ok = 0;
 	struct tc_tbf_qopt opt = {};
 	__u32 rtab[256];
 	__u32 ptab[256];
@@ -65,7 +59,6 @@ static int tbf_parse_opt(struct qdisc_util *qu, int argc, char **argv,
 				explain1("limit", *argv);
 				return -1;
 			}
-			ok++;
 		} else if (matches(*argv, "latency") == 0) {
 			NEXT_ARG();
 			if (latency) {
@@ -80,7 +73,6 @@ static int tbf_parse_opt(struct qdisc_util *qu, int argc, char **argv,
 				explain1("latency", *argv);
 				return -1;
 			}
-			ok++;
 		} else if (matches(*argv, "burst") == 0 ||
 			strcmp(*argv, "buffer") == 0 ||
 			strcmp(*argv, "maxburst") == 0) {
@@ -95,7 +87,6 @@ static int tbf_parse_opt(struct qdisc_util *qu, int argc, char **argv,
 				explain1(parm_name, *argv);
 				return -1;
 			}
-			ok++;
 		} else if (strcmp(*argv, "mtu") == 0 ||
 			   strcmp(*argv, "minburst") == 0) {
 			const char *parm_name = *argv;
@@ -109,7 +100,6 @@ static int tbf_parse_opt(struct qdisc_util *qu, int argc, char **argv,
 				explain1(parm_name, *argv);
 				return -1;
 			}
-			ok++;
 		} else if (strcmp(*argv, "mpu") == 0) {
 			NEXT_ARG();
 			if (mpu) {
@@ -120,7 +110,6 @@ static int tbf_parse_opt(struct qdisc_util *qu, int argc, char **argv,
 				explain1("mpu", *argv);
 				return -1;
 			}
-			ok++;
 		} else if (strcmp(*argv, "rate") == 0) {
 			NEXT_ARG();
 			if (rate64) {
@@ -136,7 +125,6 @@ static int tbf_parse_opt(struct qdisc_util *qu, int argc, char **argv,
 				explain1("rate", *argv);
 				return -1;
 			}
-			ok++;
 		} else if (matches(*argv, "peakrate") == 0) {
 			NEXT_ARG();
 			if (prate64) {
@@ -152,7 +140,6 @@ static int tbf_parse_opt(struct qdisc_util *qu, int argc, char **argv,
 				explain1("peakrate", *argv);
 				return -1;
 			}
-			ok++;
 		} else if (matches(*argv, "overhead") == 0) {
 			NEXT_ARG();
 			if (overhead) {
@@ -258,7 +245,7 @@ static int tbf_parse_opt(struct qdisc_util *qu, int argc, char **argv,
 	return 0;
 }
 
-static int tbf_print_opt(struct qdisc_util *qu, FILE *f, struct rtattr *opt)
+static int tbf_print_opt(const struct qdisc_util *qu, FILE *f, struct rtattr *opt)
 {
 	struct rtattr *tb[TCA_TBF_MAX+1];
 	struct tc_tbf_qopt *qopt;

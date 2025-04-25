@@ -29,6 +29,7 @@ ip-route \- routing table management
 .ti -8
 .B  ip route get
 .I ROUTE_GET_FLAGS
+.B  [ to ]
 .IR ADDRESS " [ "
 .BI from " ADDRESS " iif " STRING"
 .RB " ] [ " oif
@@ -44,7 +45,11 @@ ip-route \- routing table management
 .B  sport
 .IR NUMBER " ] [ "
 .B  dport
-.IR NUMBER " ] "
+.IR NUMBER " ] ["
+.B  as
+.IR ADDRESS " ] ["
+.B  flowlabel
+.IR FLOWLABEL " ]
 
 .ti -8
 .BR "ip route" " { " add " | " del " | " change " | " append " | "\
@@ -211,7 +216,13 @@ throw " | " unreachable " | " prohibit " | " blackhole " | " nat " ]"
 .B tos
 .IR TOS " ] ["
 .B  ttl
-.IR TTL " ]"
+.IR TTL " ] ["
+.BR key " ] ["
+.BR csum " ] ["
+.BR seq " ] ["
+.IR GENEVE_OPTS " | "
+.IR VXLAN_OPTS " | "
+.IR ERSPAN_OPTS " ]"
 
 .ti -8
 .IR ENCAP_BPF " := "
@@ -250,6 +261,8 @@ throw " | " unreachable " | " prohibit " | " blackhole " | " nat " ]"
 .IR K "/" N " ] "
 .BR mode " [ "
 .BR inline " | " encap " | " auto " ] ["
+.B tunsrc
+.IR ADDRESS " ] ["
 .B tundst
 .IR ADDRESS " ] "
 .B trace
@@ -263,9 +276,14 @@ throw " | " unreachable " | " prohibit " | " blackhole " | " nat " ]"
 
 .ti -8
 .IR ROUTE_GET_FLAGS " := "
-.BR " [ "
-.BR fibmatch
-.BR " ] "
+.IR ROUTE_GET_FLAG " [ "
+.IR ROUTE_GET_FLAGS " ] "
+
+.ti -8
+.IR ROUTE_GET_FLAG " := "
+.BR "[ "
+.BR connected " | " fibmatch " | " notify
+.BR "]"
 
 .SH DESCRIPTION
 .B ip route
@@ -356,8 +374,9 @@ normal routing tables.
 .P
 .B Route tables:
 Linux-2.x can pack routes into several routing tables identified
-by a number in the range from 1 to 2^32-1 or by name from the file
-.B @SYSCONFDIR@/rt_tables
+by a number in the range from 1 to 2^32-1 or by name from
+.BR @SYSCONF_USR_DIR@/rt_tables " or " @SYSCONF_ETC_DIR@/rt_tables
+(has precedence if exists).
 By default all normal routes are inserted into the
 .B main
 table (ID 254) and the kernel only uses this table when calculating routes.
@@ -420,7 +439,8 @@ may still match a route with a zero TOS.
 .I TOS
 is either an 8 bit hexadecimal number or an identifier
 from
-.BR "@SYSCONFDIR@/rt_dsfield" .
+.BR @SYSCONF_USR_DIR@/rt_dsfield " or " @SYSCONF_ETC_DIR@/rt_dsfield
+(has precedence if exists).
 
 .TP
 .BI metric " NUMBER"
@@ -434,8 +454,9 @@ is an arbitrary 32bit number, where routes with lower values are preferred.
 .BI table " TABLEID"
 the table to add this route to.
 .I TABLEID
-may be a number or a string from the file
-.BR "@SYSCONFDIR@/rt_tables" .
+may be a number or a string from
+.BR @SYSCONF_USR_DIR@/rt_tables " or " @SYSCONF_ETC_DIR@/rt_tables
+(has precedence if exists).
 If this parameter is omitted,
 .B ip
 assumes the
@@ -475,8 +496,9 @@ covered by the route prefix.
 .BI realm " REALMID"
 the realm to which this route is assigned.
 .I REALMID
-may be a number or a string from the file
-.BR "@SYSCONFDIR@/rt_realms" .
+may be a number or a string from
+.BR @SYSCONF_USR_DIR@/rt_realms " or " @SYSCONF_ETC_DIR@/rt_realms
+(has precedence if exists).
 
 .TP
 .BI mtu " MTU"
@@ -626,8 +648,9 @@ command.
 .BI scope " SCOPE_VAL"
 the scope of the destinations covered by the route prefix.
 .I SCOPE_VAL
-may be a number or a string from the file
-.BR "@SYSCONFDIR@/rt_scopes" .
+may be a number or a string from
+.BR @SYSCONF_USR_DIR@/rt_scopes " or " @SYSCONF_ETC_DIR@/rt_scopes
+(has precedence if exists).
 If this parameter is omitted,
 .B ip
 assumes scope
@@ -646,8 +669,9 @@ routes.
 .BI protocol " RTPROTO"
 the routing protocol identifier of this route.
 .I RTPROTO
-may be a number or a string from the file
-.BR "@SYSCONFDIR@/rt_protos" .
+may be a number or a string from
+.BR @SYSCONF_USR_DIR@/rt_protos " or " @SYSCONF_ETC_DIR@/rt_protos
+(has precedence if exists).
 If the routing protocol ID is not given,
 .B ip assumes protocol
 .B boot
@@ -765,15 +789,58 @@ is a set of encapsulation attributes specific to the
 .in +2
 .B id
 .I TUNNEL_ID
+- Tunnel ID (for example VNI in VXLAN tunnel)
+.sp
+
 .B  dst
-.IR REMOTE_IP " [ "
+.I REMOTE_IP
+- Outer header destination IP address (IPv4 or IPv6)
+.sp
+
 .B src
-.IR SRC " ] ["
+.I SRC
+- Outer header source IP address (IPv4 or IPv6)
+.sp
+
 .B tos
-.IR TOS " ] ["
-.B  ttl
-.IR TTL " ] [ "
-.BR key " ] [ " csum " ] [ " seq " ] "
+.I TOS
+- Outer header TOS
+.sp
+
+.B ttl
+.I TTL
+- Outer header TTL
+.sp
+
+.B key
+- Outer header flags with key in GRE tunnel
+.sp
+
+.B csum
+- Outer header flags with csum in GRE tunnel
+.sp
+
+.B seq
+- Outer header flags with seq in GRE tunnel
+.sp
+
+.I GENEVE_OPTS
+- Specified in the form CLASS:TYPE:DATA, where CLASS is represented as a
+16bit hexadecimal value, TYPE as an 8bit hexadecimal value and DATA as a
+variable length hexadecimal value. Additionally multiple options may be
+listed using a comma delimiter.
+.sp
+
+.I VXLAN_OPTS
+- Specified in the form GBP, as a 32bit number. Multiple options is not
+supported.
+.sp
+
+.I ERSPAN_OPTS
+- Specified in the form VERSION:INDEX:DIR:HWID, where VERSION is represented
+as a 8bit number, INDEX as an 32bit number, DIR and HWID as a 8bit number.
+Multiple options is not supported. Note INDEX is used when VERSION is 1,
+and DIR and HWID are used when VERSION is 2.
 .in -2
 .sp
 
@@ -860,10 +927,16 @@ See \fBFlavors parameters\fR section.
 
 .B End.X nh6
 .I NEXTHOP
+.RB [ " flavors "
+.IR FLAVORS " ] "
 - Regular SRv6 processing as intermediate segment endpoint.
 Additionally, forward processed packets to given next-hop.
 This action only accepts packets with a non-zero Segments Left
-value. Other matching packets are dropped.
+value. Other matching packets are dropped. The presence of flavors
+can change the regular processing of an End.X behavior according to
+the user-provided Flavor operations and information carried in the packet.
+See \fBFlavors parameters\fR section.
+
 
 .B End.DX6 nh6
 .I NEXTHOP
@@ -879,8 +952,9 @@ matching packets are dropped.
 - Decapsulate the inner IPv6 packet and forward it according to the
 specified lookup table.
 .I TABLEID
-is either a number or a string from the file
-.BR "@SYSCONFDIR@/rt_tables" .
+is either a number or a string from
+.BR @SYSCONF_USR_DIR@/rt_tables " or " @SYSCONF_ETC_DIR@/rt_tables
+(has precedence if exists).
 If
 .B vrftable
 is used, the argument must be a VRF device associated with
@@ -895,8 +969,9 @@ and an inner IPv6 packet. Other matching packets are dropped.
 - Decapsulate the inner IPv4 packet and forward it according to the
 specified lookup table.
 .I TABLEID
-is either a number or a string from the file
-.BR "@SYSCONFDIR@/rt_tables" .
+is either a number or a string from
+.BR @SYSCONF_USR_DIR@/rt_tables " or " @SYSCONF_ETC_DIR@/rt_tables
+(has precedence if exists).
 The argument must be a VRF device associated with the table id.
 Moreover, the VRF table associated with the table id must be configured
 with the VRF strict mode turned on (net.vrf.strict_mode=1). This action
@@ -908,8 +983,9 @@ at all, and an inner IPv4 packet. Other matching packets are dropped.
 - Decapsulate the inner IPv4 or IPv6 packet and forward it according
 to the specified lookup table.
 .I TABLEID
-is either a number or a string from the file
-.BR "@SYSCONFDIR@/rt_tables" .
+is either a number or a string from
+.BR @SYSCONF_USR_DIR@/rt_tables " or " @SYSCONF_ETC_DIR@/rt_tables
+(has precedence if exists).
 The argument must be a VRF device associated with the table id.
 Moreover, the VRF table associated with the table id must be configured
 with the VRF strict mode turned on (net.vrf.strict_mode=1). This action
@@ -963,7 +1039,12 @@ subset of the existing behaviors.
 .in -2
 
 .B psp
-- Penultimate Segment Pop of the SRH (not yet supported in kernel)
+- The Penultimate Segment Pop (PSP) copies the last SID from the SID List
+(carried by the outermost SRH) into the IPv6 Destination Address (DA) and
+removes (i.e. pops) the SRH from the IPv6 header.
+The PSP operation takes place only at a penultimate SR Segment Endpoint node
+(e.g., the Segment Left must be one) and does not happen at non-penultimate
+endpoint nodes. This flavor is currently only supported by End behavior.
 
 .B usp
 - Ultimate Segment Pop of the SRH (not yet supported in kernel)
@@ -1008,6 +1089,12 @@ divisible by 8. This attribute can be used only with NEXT-C-SID flavor.
 - Automatically use inline mode for local packets and encap mode for in-transit
 packets.
 .sp
+
+.B tunsrc
+.I ADDRESS
+- IPv6 address of the tunnel source (outer header), not used with inline mode.
+It is optional: if not provided, the tunnel source address is chosen
+automatically.
 
 .B tundst
 .I ADDRESS
@@ -1280,6 +1367,10 @@ was given, relookup the route with the source set to the preferred
 address received from the first lookup.
 If policy routing is used, it may be a different route.
 
+.TP
+.BI flowlabel " FLOWLABEL"
+ipv6 flow label as seen by the route lookup
+
 .P
 Note that this operation is not equivalent to
 .BR "ip route show" .
@@ -1357,6 +1448,11 @@ Adds an IPv6 route with SRv6 encapsulation and two segments attached.
 ip -6 route add 2001:db8:1::/64 encap seg6local action End.DT46 vrftable 100 dev vrf100
 .RS 4
 Adds an IPv6 route with SRv6 decapsulation and forward with lookup in VRF table.
+.RE
+.PP
+ip -6 route add 2001:db8:1::/64 encap seg6local action End flavors psp dev eth0
+.RS 4
+Adds an IPv6 route with SRv6 End behavior with psp flavor enabled.
 .RE
 .PP
 ip -6 route add 2001:db8:1::/64 encap seg6local action End flavors next-csid dev eth0

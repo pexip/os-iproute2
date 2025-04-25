@@ -1,13 +1,8 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * q_fifo.c		FIFO.
  *
- *		This program is free software; you can redistribute it and/or
- *		modify it under the terms of the GNU General Public License
- *		as published by the Free Software Foundation; either version
- *		2 of the License, or (at your option) any later version.
- *
  * Authors:	Alexey Kuznetsov, <kuznet@ms2.inr.ac.ru>
- *
  */
 
 #include <stdio.h>
@@ -27,7 +22,7 @@ static void explain(void)
 	fprintf(stderr, "Usage: ... <[p|b]fifo | pfifo_head_drop> [ limit NUMBER ]\n");
 }
 
-static int fifo_parse_opt(struct qdisc_util *qu, int argc, char **argv,
+static int fifo_parse_opt(const struct qdisc_util *qu, int argc, char **argv,
 			  struct nlmsghdr *n, const char *dev)
 {
 	int ok = 0;
@@ -57,7 +52,7 @@ static int fifo_parse_opt(struct qdisc_util *qu, int argc, char **argv,
 	return 0;
 }
 
-static int fifo_print_opt(struct qdisc_util *qu, FILE *f, struct rtattr *opt)
+static int fifo_print_opt(const struct qdisc_util *qu, FILE *f, struct rtattr *opt)
 {
 	struct tc_fifo_qopt *qopt;
 

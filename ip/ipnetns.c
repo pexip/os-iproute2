@@ -1,21 +1,21 @@
 /* SPDX-License-Identifier: GPL-2.0 */
 #define _ATFILE_SOURCE
-#include <sys/file.h>
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <sys/wait.h>
-#include <sys/inotify.h>
-#include <sys/mount.h>
-#include <sys/syscall.h>
+
 #include <stdio.h>
+#include <stdint.h>
 #include <string.h>
-#include <sched.h>
 #include <fcntl.h>
 #include <dirent.h>
 #include <errno.h>
 #include <unistd.h>
 #include <ctype.h>
-#include <linux/limits.h>
+#include <limits.h>
+
+#include <sys/file.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <sys/inotify.h>
+#include <sys/mount.h>
 
 #include <linux/net_namespace.h>
 
@@ -23,7 +23,6 @@
 #include "list.h"
 #include "ip_common.h"
 #include "namespace.h"
-#include "json_print.h"
 
 static int usage(void)
 {
@@ -96,61 +95,19 @@ static int ipnetns_have_nsid(void)
 			close(fd);
 			return 0;
 		}
-		rtnl_listen(&rth, ipnetns_accept_msg, NULL);
+		if (rtnl_listen(&rth, ipnetns_accept_msg, NULL) < 0)
+			exit(2);
 		close(fd);
 	}
 
 	return have_rtnl_getnsid;
 }
 
-int get_netnsid_from_name(const char *name)
+static int get_netnsid_from_name(const char *name)
 {
-	struct {
-		struct nlmsghdr n;
-		struct rtgenmsg g;
-		char            buf[1024];
-	} req = {
-		.n.nlmsg_len = NLMSG_LENGTH(sizeof(struct rtgenmsg)),
-		.n.nlmsg_flags = NLM_F_REQUEST,
-		.n.nlmsg_type = RTM_GETNSID,
-		.g.rtgen_family = AF_UNSPEC,
-	};
-	struct nlmsghdr *answer;
-	struct rtattr *tb[NETNSA_MAX + 1];
-	struct rtgenmsg *rthdr;
-	int len, fd, ret = -1;
-
 	netns_nsid_socket_init();
 
-	fd = netns_get_fd(name);
-	if (fd < 0)
-		return fd;
-
-	addattr32(&req.n, 1024, NETNSA_FD, fd);
-	if (rtnl_talk(&rtnsh, &req.n, &answer) < 0) {
-		close(fd);
-		return -2;
-	}
-	close(fd);
-
-	/* Validate message and parse attributes */
-	if (answer->nlmsg_type == NLMSG_ERROR)
-		goto out;
-
-	rthdr = NLMSG_DATA(answer);
-	len = answer->nlmsg_len - NLMSG_SPACE(sizeof(*rthdr));
-	if (len < 0)
-		goto out;
-
-	parse_rtattr(tb, NETNSA_MAX, NETNS_RTA(rthdr), len);
-
-	if (tb[NETNSA_NSID]) {
-		ret = rta_getattr_s32(tb[NETNSA_NSID]);
-	}
-
-out:
-	free(answer);
-	return ret;
+	return netns_id_from_name(&rtnsh, name);
 }
 
 struct nsid_cache {
@@ -330,6 +287,8 @@ int print_nsid(struct nlmsghdr *n, void *arg)
 		fprintf(stderr, "BUG: NETNSA_NSID is missing %s\n", __func__);
 		return -1;
 	}
+
+	print_headers(fp, "[NSID]");
 
 	open_json_object(NULL);
 	if (n->nlmsg_type == RTM_DELNSID)
@@ -936,40 +895,17 @@ out_delete:
 	return -1;
 }
 
-int set_netnsid_from_name(const char *name, int nsid)
+static int set_netnsid_from_name(const char *name, int nsid)
 {
-	struct {
-		struct nlmsghdr n;
-		struct rtgenmsg g;
-		char            buf[1024];
-	} req = {
-		.n.nlmsg_len = NLMSG_LENGTH(sizeof(struct rtgenmsg)),
-		.n.nlmsg_flags = NLM_F_REQUEST,
-		.n.nlmsg_type = RTM_NEWNSID,
-		.g.rtgen_family = AF_UNSPEC,
-	};
-	int fd, err = 0;
-
 	netns_nsid_socket_init();
 
-	fd = netns_get_fd(name);
-	if (fd < 0)
-		return fd;
-
-	addattr32(&req.n, 1024, NETNSA_FD, fd);
-	addattr32(&req.n, 1024, NETNSA_NSID, nsid);
-	if (rtnl_talk(&rth, &req.n, NULL) < 0)
-		err = -2;
-
-	close(fd);
-	return err;
+	return set_netns_id_from_name(&rth, name, nsid);
 }
 
 static int netns_set(int argc, char **argv)
 {
-	char netns_path[PATH_MAX];
 	const char *name;
-	int netns, nsid;
+	int nsid;
 
 	if (argc < 1) {
 		fprintf(stderr, "No netns name specified\n");
@@ -987,14 +923,6 @@ static int netns_set(int argc, char **argv)
 		invarg("Invalid \"netnsid\" value", argv[1]);
 	else if (nsid < 0)
 		invarg("\"netnsid\" value should be >= 0", argv[1]);
-
-	snprintf(netns_path, sizeof(netns_path), "%s/%s", NETNS_RUN_DIR, name);
-	netns = open(netns_path, O_RDONLY | O_CLOEXEC);
-	if (netns < 0) {
-		fprintf(stderr, "Cannot open network namespace \"%s\": %s\n",
-			name, strerror(errno));
-		return -1;
-	}
 
 	return set_netnsid_from_name(name, nsid);
 }

@@ -1,19 +1,8 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * m_connmark.c		Connection tracking marking import
  *
  * Copyright (c) 2011 Felix Fietkau <nbd@openwrt.org>
- *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms and conditions of the GNU General Public License,
- * version 2, as published by the Free Software Foundation.
- *
- * This program is distributed in the hope it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
- * more details.
- *
- * You should have received a copy of the GNU General Public License along with
- * this program; if not, see <http://www.gnu.org/licenses>.
  */
 
 #include <stdio.h>
@@ -43,7 +32,7 @@ usage(void)
 }
 
 static int
-parse_connmark(struct action_util *a, int *argc_p, char ***argv_p, int tca_id,
+parse_connmark(const struct action_util *a, int *argc_p, char ***argv_p, int tca_id,
 	      struct nlmsghdr *n)
 {
 	struct tc_connmark sel = {};
@@ -105,7 +94,7 @@ parse_connmark(struct action_util *a, int *argc_p, char ***argv_p, int tca_id,
 	return 0;
 }
 
-static int print_connmark(struct action_util *au, FILE *f, struct rtattr *arg)
+static int print_connmark(const struct action_util *au, FILE *f, struct rtattr *arg)
 {
 	struct rtattr *tb[TCA_CONNMARK_MAX + 1];
 	struct tc_connmark *ci;
@@ -123,7 +112,7 @@ static int print_connmark(struct action_util *au, FILE *f, struct rtattr *arg)
 	ci = RTA_DATA(tb[TCA_CONNMARK_PARMS]);
 
 	print_uint(PRINT_ANY, "zone", "zone %u", ci->zone);
-	print_action_control(f, " ", ci->action, "");
+	print_action_control(" ", ci->action, "");
 
 	print_nl();
 	print_uint(PRINT_ANY, "index", "\t index %u", ci->index);
@@ -134,7 +123,7 @@ static int print_connmark(struct action_util *au, FILE *f, struct rtattr *arg)
 		if (tb[TCA_CONNMARK_TM]) {
 			struct tcf_t *tm = RTA_DATA(tb[TCA_CONNMARK_TM]);
 
-			print_tm(f, tm);
+			print_tm(tm);
 		}
 	}
 	print_nl();

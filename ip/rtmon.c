@@ -1,13 +1,8 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * rtmon.c		RTnetlink listener.
  *
- *		This program is free software; you can redistribute it and/or
- *		modify it under the terms of the GNU General Public License
- *		as published by the Free Software Foundation; either version
- *		2 of the License, or (at your option) any later version.
- *
  * Authors:	Alexey Kuznetsov, <kuznet@ms2.inr.ac.ru>
- *
  */
 
 #include <stdio.h>
@@ -63,10 +58,10 @@ static int dump_msg2(struct nlmsghdr *n, void *arg)
 static void usage(void)
 {
 	fprintf(stderr,
-		"Usage: rtmon [ OPTIONS ] file FILE [ all | LISTofOBJECTS ]\n"
+		"Usage: rtmon [ OPTIONS ] file FILE [ all | OBJECTS ]\n"
 		"OPTIONS := { -f[amily] { inet | inet6 | link | help } |\n"
 		"             -4 | -6 | -0 | -V[ersion] }\n"
-		"LISTofOBJECTS := [ link ] [ address ] [ route ]\n");
+		"OBJECTS := [ link ] [ address ] [ route ]\n");
 	exit(-1);
 }
 
@@ -87,7 +82,7 @@ main(int argc, char **argv)
 			argc--;
 			argv++;
 			if (argc <= 1)
-				usage();
+				missarg("family type");
 			if (strcmp(argv[1], "inet") == 0)
 				family = AF_INET;
 			else if (strcmp(argv[1], "inet6") == 0)
@@ -113,7 +108,7 @@ main(int argc, char **argv)
 			argc--;
 			argv++;
 			if (argc <= 1)
-				usage();
+				missarg("file");
 			file = argv[1];
 		} else if (matches(argv[1], "link") == 0) {
 			llink = 1;

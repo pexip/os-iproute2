@@ -1,10 +1,7 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * ll_proto.c
  *
- *		This program is free software; you can redistribute it and/or
- *		modify it under the terms of the GNU General Public License
- *		as published by the Free Software Foundation; either version
- *		2 of the License, or (at your option) any later version.
  *
  * Authors:	Alexey Kuznetsov, <kuznet@ms2.inr.ac.ru>
  */
@@ -81,6 +78,7 @@ __PF(8021AD,802.1ad)
 __PF(MPLS_UC,mpls_uc)
 __PF(MPLS_MC,mpls_mc)
 __PF(TEB,teb)
+__PF(CFM,cfm)
 
 { 0x8100, "802.1Q" },
 { 0x88cc, "LLDP" },

@@ -1,13 +1,8 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * ipneigh.c		"ip neigh".
  *
- *		This program is free software; you can redistribute it and/or
- *		modify it under the terms of the GNU General Public License
- *		as published by the Free Software Foundation; either version
- *		2 of the License, or (at your option) any later version.
- *
  * Authors:	Alexey Kuznetsov, <kuznet@ms2.inr.ac.ru>
- *
  */
 
 #include <stdio.h>
@@ -388,6 +383,8 @@ int print_neigh(struct nlmsghdr *n, void *arg)
 			return 0;
 	}
 
+	print_headers(fp, "[NEIGH]");
+
 	open_json_object(NULL);
 	if (n->nlmsg_type == RTM_DELNEIGH)
 		print_bool(PRINT_ANY, "deleted", "Deleted ", true);
@@ -729,12 +726,15 @@ static int ipneigh_get(int argc, char **argv)
 		return -2;
 
 	ipneigh_reset_filter(0);
+	new_json_obj(json);
 	if (print_neigh(answer, stdout) < 0) {
 		fprintf(stderr, "An error :-)\n");
 		free(answer);
+		delete_json_obj();
 		return -1;
 	}
 	free(answer);
+	delete_json_obj();
 
 	return 0;
 }

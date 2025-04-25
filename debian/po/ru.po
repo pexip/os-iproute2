@@ -53,7 +53,7 @@ msgid ""
 "dropped capabilities then it could be used by an attacker to gain root "
 "permissions. It's up to you to decide about the trade-offs and select the "
 "best setting for your system. This will give cap_dac_override, cap_net_admin "
-"and cap_sys_admin to /bin/ip."
+"and cap_bpf to /bin/ip."
 msgstr ""
 "Команда ip поддерживает сброс привилегий процессов, делая исключение для ip "
 "vrf exec. Недостаток настройки прав доступа состоит в том, что в "
@@ -62,7 +62,7 @@ msgstr ""
 "злоумышленником для получения прав суперпользователя. Вам необходимо "
 "самостоятельно взвесить все за и против и выбрать для вашей системы наиболее "
 "подходящий вариант. Эта опция даст исполняемому файлу /bin/ip привилегии "
-"процессов cap_dac_override, cap_net_admin и cap_sys_admin."
+"процессов cap_dac_override, cap_net_admin и cap_bpf."
 
 #. Type: boolean
 #. Description

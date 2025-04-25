@@ -1,10 +1,6 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * iplink_vxlan.c	VXLAN device support
- *
- *              This program is free software; you can redistribute it and/or
- *              modify it under the terms of the GNU General Public License
- *              as published by the Free Software Foundation; either version
- *              2 of the License, or (at your option) any later version.
  *
  * Authors:     Stephen Hemminger <shemminger@vyatta.com
  */
@@ -23,6 +19,26 @@
 
 #define VXLAN_ATTRSET(attrs, type) (((attrs) & (1L << (type))) != 0)
 
+static const struct vxlan_bool_opt {
+	const char *key;
+	int type;
+	bool default_value;
+} vxlan_opts[] = {
+	{ "external",	IFLA_VXLAN_COLLECT_METADATA,	false },
+	{ "vnifilter",	IFLA_VXLAN_VNIFILTER,		false },
+	{ "learning", 	IFLA_VXLAN_LEARNING,		true },
+	{ "proxy",	IFLA_VXLAN_PROXY,		false },
+	{ "rsc",	IFLA_VXLAN_RSC,			false },
+	{ "l2miss",	IFLA_VXLAN_L2MISS,		false },
+	{ "l3miss",	IFLA_VXLAN_L3MISS,		false },
+	{ "udp_csum",	IFLA_VXLAN_UDP_CSUM,		true },
+	{ "udp_zero_csum6_tx", IFLA_VXLAN_UDP_ZERO_CSUM6_TX, false },
+	{ "udp_zero_csum6_rx", IFLA_VXLAN_UDP_ZERO_CSUM6_RX, false },
+	{ "remcsum_tx", IFLA_VXLAN_REMCSUM_TX,		false },
+	{ "remcsum_rx", IFLA_VXLAN_REMCSUM_RX,		false },
+	{ "localbypass", IFLA_VXLAN_LOCALBYPASS,	true },
+};
+
 static void print_explain(FILE *f)
 {
 	fprintf(f,
@@ -36,6 +52,7 @@ static void print_explain(FILE *f)
 		"		[ dev PHYS_DEV ]\n"
 		"		[ dstport PORT ]\n"
 		"		[ srcport MIN MAX ]\n"
+		"		[ reserved_bits VALUE ]\n"
 		"		[ [no]learning ]\n"
 		"		[ [no]proxy ]\n"
 		"		[ [no]rsc ]\n"
@@ -47,6 +64,7 @@ static void print_explain(FILE *f)
 		"		[ [no]udp6zerocsumtx ]\n"
 		"		[ [no]udp6zerocsumrx ]\n"
 		"		[ [no]remcsumtx ] [ [no]remcsumrx ]\n"
+		"		[ [no]localbypass ]\n"
 		"		[ [no]external ] [ gbp ] [ gpe ]\n"
 		"		[ [no]vnifilter ]\n"
 		"\n"
@@ -312,6 +330,25 @@ static int vxlan_parse_opt(struct link_util *lu, int argc, char **argv,
 			check_duparg(&attrs, IFLA_VXLAN_REMCSUM_RX,
 				     *argv, *argv);
 			addattr8(n, 1024, IFLA_VXLAN_REMCSUM_RX, 0);
+		} else if (strcmp(*argv, "localbypass") == 0) {
+			check_duparg(&attrs, IFLA_VXLAN_LOCALBYPASS,
+				     *argv, *argv);
+			addattr8(n, 1024, IFLA_VXLAN_LOCALBYPASS, 1);
+		} else if (strcmp(*argv, "nolocalbypass") == 0) {
+			check_duparg(&attrs, IFLA_VXLAN_LOCALBYPASS,
+				     *argv, *argv);
+			addattr8(n, 1024, IFLA_VXLAN_LOCALBYPASS, 0);
+		} else if (strcmp(*argv, "reserved_bits") == 0) {
+			NEXT_ARG();
+			__be64 bits;
+
+			check_duparg(&attrs, IFLA_VXLAN_RESERVED_BITS,
+				     *argv, *argv);
+			if (get_be64(&bits, *argv, 0))
+				invarg("reserved_bits", *argv);
+			addattr_l(n, 1024, IFLA_VXLAN_RESERVED_BITS,
+				  &bits, sizeof(bits));
+
 		} else if (!matches(*argv, "external")) {
 			check_duparg(&attrs, IFLA_VXLAN_COLLECT_METADATA,
 				     *argv, *argv);
@@ -424,22 +461,13 @@ static int vxlan_parse_opt(struct link_util *lu, int argc, char **argv,
 
 static void vxlan_print_opt(struct link_util *lu, FILE *f, struct rtattr *tb[])
 {
+	unsigned int i;
 	__u8 ttl = 0;
 	__u8 tos = 0;
 	__u32 maxaddr;
 
 	if (!tb)
 		return;
-
-	if (tb[IFLA_VXLAN_COLLECT_METADATA] &&
-	    rta_getattr_u8(tb[IFLA_VXLAN_COLLECT_METADATA])) {
-		print_bool(PRINT_ANY, "external", "external ", true);
-	}
-
-	if (tb[IFLA_VXLAN_VNIFILTER] &&
-	    rta_getattr_u8(tb[IFLA_VXLAN_VNIFILTER])) {
-		print_bool(PRINT_ANY, "vnifilter", "vnifilter", true);
-	}
 
 	if (tb[IFLA_VXLAN_ID] &&
 	    RTA_PAYLOAD(tb[IFLA_VXLAN_ID]) >= sizeof(__u32)) {
@@ -533,26 +561,6 @@ static void vxlan_print_opt(struct link_util *lu, FILE *f, struct rtattr *tb[])
 			   "dstport %u ",
 			   rta_getattr_be16(tb[IFLA_VXLAN_PORT]));
 
-	if (tb[IFLA_VXLAN_LEARNING]) {
-		__u8 learning = rta_getattr_u8(tb[IFLA_VXLAN_LEARNING]);
-
-		print_bool(PRINT_JSON, "learning", NULL, learning);
-		if (!learning)
-			print_bool(PRINT_FP, NULL, "nolearning ", true);
-	}
-
-	if (tb[IFLA_VXLAN_PROXY] && rta_getattr_u8(tb[IFLA_VXLAN_PROXY]))
-		print_bool(PRINT_ANY, "proxy", "proxy ", true);
-
-	if (tb[IFLA_VXLAN_RSC] && rta_getattr_u8(tb[IFLA_VXLAN_RSC]))
-		print_bool(PRINT_ANY, "rsc", "rsc ", true);
-
-	if (tb[IFLA_VXLAN_L2MISS] && rta_getattr_u8(tb[IFLA_VXLAN_L2MISS]))
-		print_bool(PRINT_ANY, "l2miss", "l2miss ", true);
-
-	if (tb[IFLA_VXLAN_L3MISS] && rta_getattr_u8(tb[IFLA_VXLAN_L3MISS]))
-		print_bool(PRINT_ANY, "l3miss", "l3miss ", true);
-
 	if (tb[IFLA_VXLAN_TOS])
 		tos = rta_getattr_u8(tb[IFLA_VXLAN_TOS]);
 	if (tos) {
@@ -605,58 +613,30 @@ static void vxlan_print_opt(struct link_util *lu, FILE *f, struct rtattr *tb[])
 	    ((maxaddr = rta_getattr_u32(tb[IFLA_VXLAN_LIMIT])) != 0))
 		print_uint(PRINT_ANY, "limit", "maxaddr %u ", maxaddr);
 
-	if (tb[IFLA_VXLAN_UDP_CSUM]) {
-		__u8 udp_csum = rta_getattr_u8(tb[IFLA_VXLAN_UDP_CSUM]);
+	if (tb[IFLA_VXLAN_RESERVED_BITS]) {
+		__be64 reserved_bits =
+			rta_getattr_u64(tb[IFLA_VXLAN_RESERVED_BITS]);
 
-		if (is_json_context()) {
-			print_bool(PRINT_ANY, "udp_csum", NULL, udp_csum);
-		} else {
-			if (!udp_csum)
-				fputs("no", f);
-			fputs("udpcsum ", f);
-		}
+		print_0xhex(PRINT_ANY, "reserved_bits",
+			    "reserved_bits %#llx ", ntohll(reserved_bits));
 	}
-
-	if (tb[IFLA_VXLAN_UDP_ZERO_CSUM6_TX]) {
-		__u8 csum6 = rta_getattr_u8(tb[IFLA_VXLAN_UDP_ZERO_CSUM6_TX]);
-
-		if (is_json_context()) {
-			print_bool(PRINT_ANY,
-				   "udp_zero_csum6_tx", NULL, csum6);
-		} else {
-			if (!csum6)
-				fputs("no", f);
-			fputs("udp6zerocsumtx ", f);
-		}
-	}
-
-	if (tb[IFLA_VXLAN_UDP_ZERO_CSUM6_RX]) {
-		__u8 csum6 = rta_getattr_u8(tb[IFLA_VXLAN_UDP_ZERO_CSUM6_RX]);
-
-		if (is_json_context()) {
-			print_bool(PRINT_ANY,
-				   "udp_zero_csum6_rx",
-				   NULL,
-				   csum6);
-		} else {
-			if (!csum6)
-				fputs("no", f);
-			fputs("udp6zerocsumrx ", f);
-		}
-	}
-
-	if (tb[IFLA_VXLAN_REMCSUM_TX] &&
-	    rta_getattr_u8(tb[IFLA_VXLAN_REMCSUM_TX]))
-		print_bool(PRINT_ANY, "remcsum_tx", "remcsumtx ", true);
-
-	if (tb[IFLA_VXLAN_REMCSUM_RX] &&
-	    rta_getattr_u8(tb[IFLA_VXLAN_REMCSUM_RX]))
-		print_bool(PRINT_ANY, "remcsum_rx", "remcsumrx ", true);
 
 	if (tb[IFLA_VXLAN_GBP])
-		print_bool(PRINT_ANY, "gbp", "gbp ", true);
+		print_null(PRINT_ANY, "gbp", "gbp ", NULL);
 	if (tb[IFLA_VXLAN_GPE])
-		print_bool(PRINT_ANY, "gpe", "gpe ", true);
+		print_null(PRINT_ANY, "gpe", "gpe ", NULL);
+
+	for (i = 0; i < ARRAY_SIZE(vxlan_opts); i++) {
+		const struct vxlan_bool_opt *opt = &vxlan_opts[i];
+		__u8 val;
+
+		if (!tb[opt->type])
+			continue;
+		val = rta_getattr_u8(tb[opt->type]);
+
+		print_bool_opt(PRINT_ANY, opt->key, val,
+			       val != opt->default_value || show_details > 1);
+	}
 }
 
 static void vxlan_print_help(struct link_util *lu, int argc, char **argv,
