@@ -1,13 +1,8 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * libnetlink.c	RTnetlink service routines.
  *
- *		This program is free software; you can redistribute it and/or
- *		modify it under the terms of the GNU General Public License
- *		as published by the Free Software Foundation; either version
- *		2 of the License, or (at your option) any later version.
- *
  * Authors:	Alexey Kuznetsov, <kuznet@ms2.inr.ac.ru>
- *
  */
 
 #include <stdio.h>
@@ -115,6 +110,10 @@ int nl_dump_ext_ack(const struct nlmsghdr *nlh, nl_ext_ack_fn_t errfn)
 		} else if (!(nlh->nlmsg_flags & NLM_F_CAPPED))
 			err_nlh = &err->msg;
 	}
+
+	if (tb[NLMSGERR_ATTR_MISS_TYPE])
+		fprintf(stderr, "Missing required attribute type %u\n",
+			mnl_attr_get_u32(tb[NLMSGERR_ATTR_MISS_TYPE]));
 
 	if (errfn)
 		return errfn(msg, off, err_nlh);
@@ -732,12 +731,14 @@ int rtnl_dump_request_n(struct rtnl_handle *rth, struct nlmsghdr *n)
 static int rtnl_dump_done(struct nlmsghdr *h,
 			  const struct rtnl_dump_filter_arg *a)
 {
-	int len = *(int *)NLMSG_DATA(h);
+	int len;
 
 	if (h->nlmsg_len < NLMSG_LENGTH(sizeof(int))) {
 		fprintf(stderr, "DONE truncated\n");
 		return -1;
 	}
+
+	len = *(int *)NLMSG_DATA(h);
 
 	if (len < 0) {
 		errno = -len;
@@ -1104,6 +1105,8 @@ next:
 
 				if (answer)
 					*answer = (struct nlmsghdr *)buf;
+				else
+					free(buf);
 				return 0;
 			}
 
@@ -1169,12 +1172,6 @@ int rtnl_talk(struct rtnl_handle *rtnl, struct nlmsghdr *n,
 	      struct nlmsghdr **answer)
 {
 	return __rtnl_talk(rtnl, n, answer, true, NULL);
-}
-
-int rtnl_talk_iov(struct rtnl_handle *rtnl, struct iovec *iovec, size_t iovlen,
-		  struct nlmsghdr **answer)
-{
-	return __rtnl_talk_iov(rtnl, iovec, iovlen, answer, true, NULL);
 }
 
 int rtnl_talk_suppress_rtnl_errmsg(struct rtnl_handle *rtnl, struct nlmsghdr *n,

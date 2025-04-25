@@ -24,19 +24,20 @@ static void explain(void)
 {
 	fprintf(stderr,
 		"Usage: ... netem [ limit PACKETS ]\n"
-		"                 [ delay TIME [ JITTER [CORRELATION]]]\n"
+		"                 [ delay TIME [ JITTER [ CORRELATION ] ] ]\n"
 		"                 [ distribution {uniform|normal|pareto|paretonormal} ]\n"
-		"                 [ corrupt PERCENT [CORRELATION]]\n"
-		"                 [ duplicate PERCENT [CORRELATION]]\n"
-		"                 [ loss random PERCENT [CORRELATION]]\n"
-		"                 [ loss state P13 [P31 [P32 [P23 P14]]]\n"
-		"                 [ loss gemodel PERCENT [R [1-H [1-K]]]\n"
+		"                 [ corrupt PERCENT [ CORRELATION ] ]\n"
+		"                 [ duplicate PERCENT [ CORRELATION ] ]\n"
+		"                 [ loss random PERCENT [ CORRELATION ] ]\n"
+		"                 [ loss state P13 [ P31 [ P32 [ P23 [ P14 ] ] ] ] ]\n"
+		"                 [ loss gemodel PERCENT [ R [ 1-H [ 1-K ] ] ] ]\n"
+		"                 [ seed SEED ]\n"
 		"                 [ ecn ]\n"
-		"                 [ reorder PERCENT [CORRELATION] [ gap DISTANCE ]]\n"
-		"                 [ rate RATE [PACKETOVERHEAD] [CELLSIZE] [CELLOVERHEAD]]\n"
-		"                 [ slot MIN_DELAY [MAX_DELAY] [packets MAX_PACKETS] [bytes MAX_BYTES]]\n"
+		"                 [ reorder PERCENT [ CORRELATION ] [ gap DISTANCE ] ]\n"
+		"                 [ rate RATE [ PACKETOVERHEAD ] [ CELLSIZE ] [ CELLOVERHEAD ] ]\n"
+		"                 [ slot MIN_DELAY [ MAX_DELAY ] [ packets MAX_PACKETS ] [ bytes MAX_BYTES ] ]\n"
 		"                 [ slot distribution {uniform|normal|pareto|paretonormal|custom}\n"
-		"                   DELAY JITTER [packets MAX_PACKETS] [bytes MAX_BYTES]]\n");
+		"                   DELAY JITTER [ packets MAX_PACKETS ] [ bytes MAX_BYTES ] ]\n");
 }
 
 static void explain1(const char *arg)
@@ -116,7 +117,7 @@ static void print_corr(bool present, __u32 value)
 }
 
 /*
- * Simplistic file parser for distrbution data.
+ * Simplistic file parser for distribution data.
  * Format is:
  *	# comment line(s)
  *	data0 data1 ...
@@ -169,27 +170,8 @@ static int get_distribution(const char *type, __s16 *data, int maxdata)
 #define NEXT_IS_SIGNED_NUMBER() \
 	(NEXT_ARG_OK() && (isdigit(argv[1][0]) || argv[1][0] == '-'))
 
-/*
- * Adjust for the fact that psched_ticks aren't always usecs
- *  (based on kernel PSCHED_CLOCK configuration
- */
-static int get_ticks(__u32 *ticks, const char *str)
-{
-	unsigned int t;
 
-	if (get_time(&t, str))
-		return -1;
-
-	if (tc_core_time2big(t)) {
-		fprintf(stderr, "Illegal %u time (too large)\n", t);
-		return -1;
-	}
-
-	*ticks = tc_core_time2tick(t);
-	return 0;
-}
-
-static int netem_parse_opt(struct qdisc_util *qu, int argc, char **argv,
+static int netem_parse_opt(const struct qdisc_util *qu, int argc, char **argv,
 			   struct nlmsghdr *n, const char *dev)
 {
 	int dist_size = 0;
@@ -207,7 +189,10 @@ static int netem_parse_opt(struct qdisc_util *qu, int argc, char **argv,
 	__s16 *slot_dist_data = NULL;
 	__u16 loss_type = NETEM_LOSS_UNSPEC;
 	int present[__TCA_NETEM_MAX] = {};
+	__s64 latency64 = 0;
+	__s64 jitter64 = 0;
 	__u64 rate64 = 0;
+	__u64 seed = 0;
 
 	for ( ; argc > 0; --argc, ++argv) {
 		if (matches(*argv, "limit") == 0) {
@@ -219,14 +204,20 @@ static int netem_parse_opt(struct qdisc_util *qu, int argc, char **argv,
 		} else if (matches(*argv, "latency") == 0 ||
 			   matches(*argv, "delay") == 0) {
 			NEXT_ARG();
-			if (get_ticks(&opt.latency, *argv)) {
+
+			/* Old latency value in opt is no longer used. */
+			present[TCA_NETEM_LATENCY64] = 1;
+
+			if (get_time64(&latency64, *argv)) {
 				explain1("latency");
 				return -1;
 			}
 
 			if (NEXT_IS_NUMBER()) {
 				NEXT_ARG();
-				if (get_ticks(&opt.jitter, *argv)) {
+
+				present[TCA_NETEM_JITTER64] = 1;
+				if (get_time64(&jitter64, *argv)) {
 					explain1("latency");
 					return -1;
 				}
@@ -363,6 +354,13 @@ random_loss_model:
 					*argv);
 				return -1;
 			}
+		} else if (matches(*argv, "seed") == 0) {
+			NEXT_ARG();
+			present[TCA_NETEM_PRNG_SEED] = 1;
+			if (get_u64(&seed, *argv, 10)) {
+				explain1("seed");
+				return -1;
+			}
 		} else if (matches(*argv, "ecn") == 0) {
 			present[TCA_NETEM_ECN] = 1;
 		} else if (matches(*argv, "reorder") == 0) {
@@ -416,7 +414,10 @@ random_loss_model:
 			}
 		} else if (matches(*argv, "distribution") == 0) {
 			NEXT_ARG();
-			dist_data = calloc(sizeof(dist_data[0]), MAX_DIST);
+			dist_data = calloc(MAX_DIST, sizeof(dist_data[0]));
+			if (dist_data == NULL)
+				return -1;
+
 			dist_size = get_distribution(*argv, dist_data, MAX_DIST);
 			if (dist_size <= 0) {
 				free(dist_data);
@@ -478,7 +479,7 @@ random_loss_model:
 				if (strcmp(*argv, "distribution") == 0) {
 					present[TCA_NETEM_SLOT] = 1;
 					NEXT_ARG();
-					slot_dist_data = calloc(sizeof(slot_dist_data[0]), MAX_DIST);
+					slot_dist_data = calloc(MAX_DIST, sizeof(slot_dist_data[0]));
 					if (!slot_dist_data)
 						return -1;
 					slot_dist_size = get_distribution(*argv, slot_dist_data, MAX_DIST);
@@ -540,7 +541,7 @@ random_loss_model:
 	tail = NLMSG_TAIL(n);
 
 	if (reorder.probability) {
-		if (opt.latency == 0) {
+		if (latency64 == 0) {
 			fprintf(stderr, "reordering not possible without specifying some delay\n");
 			explain();
 			return -1;
@@ -561,13 +562,21 @@ random_loss_model:
 		}
 	}
 
-	if (dist_data && (opt.latency == 0 || opt.jitter == 0)) {
+	if (dist_data && (latency64 == 0 || jitter64 == 0)) {
 		fprintf(stderr, "distribution specified but no latency and jitter values\n");
 		explain();
 		return -1;
 	}
 
 	if (addattr_l(n, 1024, TCA_OPTIONS, &opt, sizeof(opt)) < 0)
+		return -1;
+
+	if (present[TCA_NETEM_LATENCY64] &&
+	    addattr_l(n, 1024, TCA_NETEM_LATENCY64, &latency64, sizeof(latency64)) < 0)
+		return -1;
+
+	if (present[TCA_NETEM_JITTER64] &&
+	    addattr_l(n, 1024, TCA_NETEM_JITTER64, &jitter64, sizeof(jitter64)) < 0)
 		return -1;
 
 	if (present[TCA_NETEM_CORR] &&
@@ -624,6 +633,12 @@ random_loss_model:
 			return -1;
 	}
 
+	if (present[TCA_NETEM_PRNG_SEED] &&
+	    addattr_l(n, 1024, TCA_NETEM_PRNG_SEED, &seed,
+		      sizeof(seed)) < 0)
+		return -1;
+
+
 	if (dist_data) {
 		if (addattr_l(n, MAX_DIST * sizeof(dist_data[0]),
 			      TCA_NETEM_DELAY_DIST,
@@ -643,7 +658,7 @@ random_loss_model:
 	return 0;
 }
 
-static int netem_print_opt(struct qdisc_util *qu, FILE *f, struct rtattr *opt)
+static int netem_print_opt(const struct qdisc_util *qu, FILE *f, struct rtattr *opt)
 {
 	const struct tc_netem_corr *cor = NULL;
 	const struct tc_netem_reorder *reorder = NULL;
@@ -654,8 +669,12 @@ static int netem_print_opt(struct qdisc_util *qu, FILE *f, struct rtattr *opt)
 	struct tc_netem_qopt qopt;
 	const struct tc_netem_rate *rate = NULL;
 	const struct tc_netem_slot *slot = NULL;
+	bool seed_present = false;
+	__u64 seed = 0;
 	int len;
 	__u64 rate64 = 0;
+	__u64 latency64 = 0;
+	__u64 jitter64 = 0;
 
 	SPRINT_BUF(b1);
 
@@ -714,33 +733,50 @@ static int netem_print_opt(struct qdisc_util *qu, FILE *f, struct rtattr *opt)
 				return -1;
 			rate64 = rta_getattr_u64(tb[TCA_NETEM_RATE64]);
 		}
+		if (tb[TCA_NETEM_LATENCY64]) {
+			if (RTA_PAYLOAD(tb[TCA_NETEM_LATENCY64]) < sizeof(latency64))
+				return -1;
+			latency64 = rta_getattr_u64(tb[TCA_NETEM_LATENCY64]);
+
+		}
+		if (tb[TCA_NETEM_JITTER64]) {
+			if (RTA_PAYLOAD(tb[TCA_NETEM_JITTER64]) < sizeof(jitter64))
+				return -1;
+			jitter64 = rta_getattr_u64(tb[TCA_NETEM_JITTER64]);
+
+		}
 		if (tb[TCA_NETEM_SLOT]) {
 			if (RTA_PAYLOAD(tb[TCA_NETEM_SLOT]) < sizeof(*slot))
 				return -1;
 			slot = RTA_DATA(tb[TCA_NETEM_SLOT]);
 		}
+		if (tb[TCA_NETEM_PRNG_SEED]) {
+			if (RTA_PAYLOAD(tb[TCA_NETEM_PRNG_SEED]) < sizeof(seed))
+				return -1;
+			seed_present = true;
+			seed = rta_getattr_u64(tb[TCA_NETEM_PRNG_SEED]);
+		}
 	}
 
 	print_uint(PRINT_ANY, "limit", "limit %d", qopt.limit);
 
-	if (qopt.latency) {
-		open_json_object("delay");
-		if (!is_json_context()) {
-			print_string(PRINT_FP, NULL, " delay %s",
-				     sprint_ticks(qopt.latency, b1));
 
-			if (qopt.jitter)
-				print_string(PRINT_FP, NULL, "  %s",
-					     sprint_ticks(qopt.jitter, b1));
-		} else {
+	if (latency64 != 0) {
+		open_json_object("delay");
+
+		if (is_json_context()) {
 			print_float(PRINT_JSON, "delay", NULL,
-				    tc_core_tick2time(qopt.latency) /
-				    1000000.);
+				    (double)latency64 / 1000000000.);
 			print_float(PRINT_JSON, "jitter", NULL,
-				    tc_core_tick2time(qopt.jitter) /
-				    1000000.);
+				    (double)jitter64 / 1000000000.);
+		} else {
+			print_string(PRINT_FP, NULL, " delay %s",
+				     sprint_time64(latency64, b1));
+			if (jitter64 != 0)
+				print_string(PRINT_FP, NULL, "  %s",
+					     sprint_time64(jitter64, b1));
 		}
-		print_corr(qopt.jitter && cor && cor->delay_corr,
+		print_corr(jitter64 && cor && cor->delay_corr,
 			   cor ? cor->delay_corr : 0);
 		close_json_object();
 	}
@@ -819,6 +855,9 @@ static int netem_print_opt(struct qdisc_util *qu, FILE *f, struct rtattr *opt)
 		PRINT_INT_OPT("bytes", slot->max_bytes);
 		close_json_object();
 	}
+
+	if (seed_present)
+		print_u64(PRINT_ANY, "seed", " seed %llu", seed);
 
 	print_bool(PRINT_JSON, "ecn", NULL, ecn);
 	if (ecn)

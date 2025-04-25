@@ -1,10 +1,6 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * f_flower.c		Flower Classifier
- *
- *		This program is free software; you can distribute it and/or
- *		modify it under the terms of the GNU General Public License
- *		as published by the Free Software Foundation; either version
- *		2 of the License, or (at your option) any later version.
  *
  * Authors:     Jiri Pirko <jiri@resnulli.us>
  */
@@ -14,7 +10,7 @@
 #include <unistd.h>
 #include <string.h>
 #include <net/if.h>
-#include <linux/limits.h>
+
 #include <linux/if_arp.h>
 #include <linux/if_ether.h>
 #include <linux/ip.h>
@@ -26,8 +22,16 @@
 #include "tc_util.h"
 #include "rt_names.h"
 
+/* maximum length of options string */
+#define FLOWER_OPTS_MAX	4096
+
+#ifndef IPPROTO_L2TP
+#define IPPROTO_L2TP 115
+#endif
+
 enum flower_matching_flags {
 	FLOWER_IP_FLAGS,
+	FLOWER_ENC_DST_FLAGS,
 };
 
 enum flower_endpoint {
@@ -57,10 +61,10 @@ static void explain(void)
 		"			cvlan_prio PRIORITY |\n"
 		"			cvlan_ethtype [ ipv4 | ipv6 | ETH-TYPE ] |\n"
 		"			pppoe_sid PSID |\n"
-		"			ppp_proto [ ipv4 | ipv6 | mpls_uc | mpls_mc | PPP_PROTO ]"
+		"			ppp_proto [ ipv4 | ipv6 | mpls_uc | mpls_mc | PPP_PROTO ] |\n"
 		"			dst_mac MASKED-LLADDR |\n"
 		"			src_mac MASKED-LLADDR |\n"
-		"			ip_proto [tcp | udp | sctp | icmp | icmpv6 | IP-PROTO ] |\n"
+		"			ip_proto [tcp | udp | sctp | icmp | icmpv6 | l2tp | esp | ah | IP-PROTO ] |\n"
 		"			ip_tos MASKED-IP_TOS |\n"
 		"			ip_ttl MASKED-IP_TTL |\n"
 		"			mpls LSE-LIST |\n"
@@ -68,6 +72,8 @@ static void explain(void)
 		"			mpls_tc TC |\n"
 		"			mpls_bos BOS |\n"
 		"			mpls_ttl TTL |\n"
+		"			spi SPI-INDEX  |\n"
+		"			l2tpv3_sid LSID |\n"
 		"			dst_ip PREFIX |\n"
 		"			src_ip PREFIX |\n"
 		"			dst_port PORT-NUMBER |\n"
@@ -87,19 +93,26 @@ static void explain(void)
 		"			enc_ttl MASKED-IP_TTL |\n"
 		"			geneve_opts MASKED-OPTIONS |\n"
 		"			vxlan_opts MASKED-OPTIONS |\n"
-		"                       erspan_opts MASKED-OPTIONS |\n"
+		"			erspan_opts MASKED-OPTIONS |\n"
 		"			gtp_opts MASKED-OPTIONS |\n"
+		"			pfcp_opts MASKED-OPTIONS |\n"
 		"			ip_flags IP-FLAGS |\n"
+		"			l2_miss L2_MISS |\n"
 		"			enc_dst_port [ port_number ] |\n"
 		"			ct_state MASKED_CT_STATE |\n"
 		"			ct_label MASKED_CT_LABEL |\n"
 		"			ct_mark MASKED_CT_MARK |\n"
-		"			ct_zone MASKED_CT_ZONE }\n"
+		"			ct_zone MASKED_CT_ZONE |\n"
+		"			cfm CFM |\n"
+		"			enc_flags ENCFLAG-LIST }\n"
 		"	LSE-LIST := [ LSE-LIST ] LSE\n"
 		"	LSE := lse depth DEPTH { label LABEL | tc TC | bos BOS | ttl TTL }\n"
 		"	FILTERID := X:Y:Z\n"
 		"	MASKED_LLADDR := { LLADDR | LLADDR/MASK | LLADDR/BITS }\n"
 		"	MASKED_CT_STATE := combination of {+|-} and flags trk,est,new,rel,rpl,inv\n"
+		"	CFM := { mdl LEVEL | op OPCODE }\n"
+		"	ENCFLAG-LIST := [ ENCFLAG-LIST/ ]ENCFLAG\n"
+		"	ENCFLAG := { [no]tuncsum | [no]tundf | [no]tunoam | [no]tuncrit }\n"
 		"	ACTION-SPEC := ... look at individual actions\n"
 		"\n"
 		"NOTE:	CLASSID, IP-PROTO are parsed as hexadecimal input.\n"
@@ -199,6 +212,10 @@ struct flag_to_string {
 static struct flag_to_string flags_str[] = {
 	{ TCA_FLOWER_KEY_FLAGS_IS_FRAGMENT, FLOWER_IP_FLAGS, "frag" },
 	{ TCA_FLOWER_KEY_FLAGS_FRAG_IS_FIRST, FLOWER_IP_FLAGS, "firstfrag" },
+	{ TCA_FLOWER_KEY_FLAGS_TUNNEL_CSUM, FLOWER_ENC_DST_FLAGS, "tuncsum" },
+	{ TCA_FLOWER_KEY_FLAGS_TUNNEL_DONT_FRAGMENT, FLOWER_ENC_DST_FLAGS, "tundf" },
+	{ TCA_FLOWER_KEY_FLAGS_TUNNEL_OAM, FLOWER_ENC_DST_FLAGS, "tunoam" },
+	{ TCA_FLOWER_KEY_FLAGS_TUNNEL_CRIT_OPT, FLOWER_ENC_DST_FLAGS, "tuncrit" },
 };
 
 static int flower_parse_matching_flags(char *str,
@@ -428,6 +445,21 @@ static int flower_parse_ip_proto(char *str, __be16 eth_type, int type,
 		if (eth_type != htons(ETH_P_IPV6))
 			goto err;
 		ip_proto = IPPROTO_ICMPV6;
+	} else if (!strcmp(str, "l2tp")) {
+		if (eth_type != htons(ETH_P_IP) &&
+		    eth_type != htons(ETH_P_IPV6))
+			goto err;
+		ip_proto = IPPROTO_L2TP;
+	} else if (!strcmp(str, "esp")) {
+		if (eth_type != htons(ETH_P_IP) &&
+		    eth_type != htons(ETH_P_IPV6))
+			goto err;
+		ip_proto = IPPROTO_ESP;
+	} else if (!strcmp(str, "ah")) {
+		if (eth_type != htons(ETH_P_IP) &&
+		    eth_type != htons(ETH_P_IPV6))
+			goto err;
+		ip_proto = IPPROTO_AH;
 	} else {
 		ret = get_u8(&ip_proto, str, 16);
 		if (ret)
@@ -646,6 +678,50 @@ static int flower_parse_icmp(char *str, __u16 eth_type, __u8 ip_proto,
 	return flower_parse_u8(str, value_type, mask_type, NULL, NULL, n);
 }
 
+static int flower_parse_spi(char *str, __u8 ip_proto, struct nlmsghdr *n)
+{
+	__be32 spi;
+	int ret;
+
+	if (ip_proto != IPPROTO_UDP && ip_proto != IPPROTO_ESP && ip_proto != IPPROTO_AH) {
+		fprintf(stderr,
+			"Can't set \"spi\" if ip_proto isn't ESP/UDP/AH\n");
+		return -1;
+	}
+
+	ret = get_be32(&spi, str, 16);
+	if (ret < 0) {
+		fprintf(stderr, "Illegal \"spi index\"\n");
+		return -1;
+	}
+
+	addattr32(n, MAX_MSG, TCA_FLOWER_KEY_SPI, spi);
+	addattr32(n, MAX_MSG, TCA_FLOWER_KEY_SPI_MASK, UINT32_MAX);
+
+	return 0;
+}
+
+static int flower_parse_l2tpv3(char *str, __u8 ip_proto,
+			       struct nlmsghdr *n)
+{
+	__be32 sid;
+	int ret;
+
+	if (ip_proto != IPPROTO_L2TP) {
+		fprintf(stderr,
+			"Can't set \"l2tpv3_sid\" if ip_proto isn't l2tp\n");
+		return -1;
+	}
+	ret = get_be32(&sid, str, 10);
+	if (ret < 0) {
+		fprintf(stderr, "Illegal \"l2tpv3 session id\"\n");
+		return -1;
+	}
+	addattr32(n, MAX_MSG, TCA_FLOWER_KEY_L2TPV3_SID, sid);
+
+	return 0;
+}
+
 static int flower_port_attr_type(__u8 ip_proto, enum flower_endpoint endpoint)
 {
 	if (ip_proto == IPPROTO_TCP)
@@ -705,7 +781,7 @@ static int flower_port_range_attr_type(__u8 ip_proto, enum flower_endpoint type,
 }
 
 /* parse range args in format 10-20 */
-static int parse_range(char *str, __be16 *min, __be16 *max)
+static int parse_range(char *str, __be16 *min, __be16 *max, bool *p_is_range)
 {
 	char *sep;
 
@@ -718,6 +794,8 @@ static int parse_range(char *str, __be16 *min, __be16 *max)
 
 		if (get_be16(max, sep + 1, 10))
 			return -1;
+
+		*p_is_range = true;
 	} else {
 		if (get_be16(min, str, 10))
 			return -1;
@@ -729,19 +807,20 @@ static int flower_parse_port(char *str, __u8 ip_proto,
 			     enum flower_endpoint endpoint,
 			     struct nlmsghdr *n)
 {
+	bool is_range = false;
 	char *slash = NULL;
 	__be16 min = 0;
 	__be16 max = 0;
 	int ret;
 
-	ret = parse_range(str, &min, &max);
+	ret = parse_range(str, &min, &max, &is_range);
 	if (ret) {
 		slash = strchr(str, '/');
 		if (!slash)
 			return -1;
 	}
 
-	if (min && max) {
+	if (is_range) {
 		__be16 min_port_type, max_port_type;
 
 		if (ntohs(max) <= ntohs(min)) {
@@ -754,7 +833,7 @@ static int flower_parse_port(char *str, __u8 ip_proto,
 
 		addattr16(n, MAX_MSG, min_port_type, min);
 		addattr16(n, MAX_MSG, max_port_type, max);
-	} else if (slash || (min && !max)) {
+	} else {
 		int type;
 
 		type = flower_port_attr_type(ip_proto, endpoint);
@@ -772,8 +851,6 @@ static int flower_parse_port(char *str, __u8 ip_proto,
 				return -1;
 			return flower_parse_u16(str, type, mask_type, n, true);
 		}
-	} else {
-		return -1;
 	}
 	return 0;
 }
@@ -1087,6 +1164,58 @@ static int flower_parse_gtp_opt(char *str, struct nlmsghdr *n)
 	return 0;
 }
 
+static int flower_parse_pfcp_opt(char *str, struct nlmsghdr *n)
+{
+	struct rtattr *nest;
+	char *token;
+	int i, err;
+
+	nest = addattr_nest(n, MAX_MSG,
+			    TCA_FLOWER_KEY_ENC_OPTS_PFCP | NLA_F_NESTED);
+
+	i = 1;
+	token = strsep(&str, ":");
+	while (token) {
+		switch (i) {
+		case TCA_FLOWER_KEY_ENC_OPT_PFCP_TYPE:
+		{
+			__u8 opt_type;
+
+			if (!strlen(token))
+				break;
+			err = get_u8(&opt_type, token, 16);
+			if (err)
+				return err;
+
+			addattr8(n, MAX_MSG, i, opt_type);
+			break;
+		}
+		case TCA_FLOWER_KEY_ENC_OPT_PFCP_SEID:
+		{
+			__be64 opt_seid;;
+
+			if (!strlen(token))
+				break;
+			err = get_be64(&opt_seid, token, 16);
+			if (err)
+				return err;
+
+			addattr64(n, MAX_MSG, i, opt_seid);
+			break;
+		}
+		default:
+			fprintf(stderr, "Unknown \"pfcp_opts\" type\n");
+			return -1;
+		}
+
+		token = strsep(&str, ":");
+		i++;
+	}
+	addattr_nest_end(n, nest);
+
+	return 0;
+}
+
 static int flower_parse_geneve_opts(char *str, struct nlmsghdr *n)
 {
 	char *token;
@@ -1126,7 +1255,7 @@ static int flower_check_enc_opt_key(char *key)
 
 static int flower_parse_enc_opts_geneve(char *str, struct nlmsghdr *n)
 {
-	char key[XATTR_SIZE_MAX], mask[XATTR_SIZE_MAX];
+	char key[FLOWER_OPTS_MAX], mask[FLOWER_OPTS_MAX];
 	int data_len, key_len, mask_len, err;
 	char *token, *slash;
 	struct rtattr *nest;
@@ -1139,7 +1268,7 @@ static int flower_parse_enc_opts_geneve(char *str, struct nlmsghdr *n)
 		if (slash)
 			*slash = '\0';
 
-		if ((key_len + strlen(token) > XATTR_SIZE_MAX) ||
+		if ((key_len + strlen(token) > FLOWER_OPTS_MAX) ||
 		    flower_check_enc_opt_key(token))
 			return -1;
 
@@ -1149,7 +1278,7 @@ static int flower_parse_enc_opts_geneve(char *str, struct nlmsghdr *n)
 
 		if (!slash) {
 			/* Pad out mask when not provided */
-			if (mask_len + strlen(token) > XATTR_SIZE_MAX)
+			if (mask_len + strlen(token) > FLOWER_OPTS_MAX)
 				return -1;
 
 			data_len = strlen(rindex(token, ':'));
@@ -1162,7 +1291,7 @@ static int flower_parse_enc_opts_geneve(char *str, struct nlmsghdr *n)
 			continue;
 		}
 
-		if (mask_len + strlen(slash + 1) > XATTR_SIZE_MAX)
+		if (mask_len + strlen(slash + 1) > FLOWER_OPTS_MAX)
 			return -1;
 
 		strcpy(&mask[mask_len], slash + 1);
@@ -1192,7 +1321,7 @@ static int flower_parse_enc_opts_geneve(char *str, struct nlmsghdr *n)
 
 static int flower_parse_enc_opts_vxlan(char *str, struct nlmsghdr *n)
 {
-	char key[XATTR_SIZE_MAX], mask[XATTR_SIZE_MAX];
+	char key[FLOWER_OPTS_MAX], mask[FLOWER_OPTS_MAX];
 	struct rtattr *nest;
 	char *slash;
 	int err;
@@ -1200,14 +1329,14 @@ static int flower_parse_enc_opts_vxlan(char *str, struct nlmsghdr *n)
 	slash = strchr(str, '/');
 	if (slash) {
 		*slash++ = '\0';
-		if (strlen(slash) > XATTR_SIZE_MAX)
+		if (strlen(slash) > FLOWER_OPTS_MAX)
 			return -1;
 		strcpy(mask, slash);
 	} else {
 		strcpy(mask, "0xffffffff");
 	}
 
-	if (strlen(str) > XATTR_SIZE_MAX)
+	if (strlen(str) > FLOWER_OPTS_MAX)
 		return -1;
 	strcpy(key, str);
 
@@ -1229,7 +1358,7 @@ static int flower_parse_enc_opts_vxlan(char *str, struct nlmsghdr *n)
 
 static int flower_parse_enc_opts_erspan(char *str, struct nlmsghdr *n)
 {
-	char key[XATTR_SIZE_MAX], mask[XATTR_SIZE_MAX];
+	char key[FLOWER_OPTS_MAX], mask[FLOWER_OPTS_MAX];
 	struct rtattr *nest;
 	char *slash;
 	int err;
@@ -1238,7 +1367,7 @@ static int flower_parse_enc_opts_erspan(char *str, struct nlmsghdr *n)
 	slash = strchr(str, '/');
 	if (slash) {
 		*slash++ = '\0';
-		if (strlen(slash) > XATTR_SIZE_MAX)
+		if (strlen(slash) > FLOWER_OPTS_MAX)
 			return -1;
 		strcpy(mask, slash);
 	} else {
@@ -1250,7 +1379,7 @@ static int flower_parse_enc_opts_erspan(char *str, struct nlmsghdr *n)
 		strcpy(mask + index, ":0xffffffff:0xff:0xff");
 	}
 
-	if (strlen(str) > XATTR_SIZE_MAX)
+	if (strlen(str) > FLOWER_OPTS_MAX)
 		return -1;
 	strcpy(key, str);
 
@@ -1272,7 +1401,7 @@ static int flower_parse_enc_opts_erspan(char *str, struct nlmsghdr *n)
 
 static int flower_parse_enc_opts_gtp(char *str, struct nlmsghdr *n)
 {
-	char key[XATTR_SIZE_MAX], mask[XATTR_SIZE_MAX];
+	char key[FLOWER_OPTS_MAX], mask[FLOWER_OPTS_MAX];
 	struct rtattr *nest;
 	char *slash;
 	int err;
@@ -1280,13 +1409,13 @@ static int flower_parse_enc_opts_gtp(char *str, struct nlmsghdr *n)
 	slash = strchr(str, '/');
 	if (slash) {
 		*slash++ = '\0';
-		if (strlen(slash) > XATTR_SIZE_MAX)
+		if (strlen(slash) > FLOWER_OPTS_MAX)
 			return -1;
 		strcpy(mask, slash);
 	} else
 		strcpy(mask, "ff:ff");
 
-	if (strlen(str) > XATTR_SIZE_MAX)
+	if (strlen(str) > FLOWER_OPTS_MAX)
 		return -1;
 	strcpy(key, str);
 
@@ -1298,6 +1427,44 @@ static int flower_parse_enc_opts_gtp(char *str, struct nlmsghdr *n)
 
 	nest = addattr_nest(n, MAX_MSG, TCA_FLOWER_KEY_ENC_OPTS_MASK | NLA_F_NESTED);
 	err = flower_parse_gtp_opt(mask, n);
+	if (err)
+		return err;
+	addattr_nest_end(n, nest);
+
+	return 0;
+}
+
+static int flower_parse_enc_opts_pfcp(char *str, struct nlmsghdr *n)
+{
+	char key[FLOWER_OPTS_MAX], mask[FLOWER_OPTS_MAX];
+	struct rtattr *nest;
+	char *slash;
+	int err;
+
+
+	slash = strchr(str, '/');
+	if (slash) {
+		*slash++ = '\0';
+		if (strlen(slash) > FLOWER_OPTS_MAX)
+			return -1;
+		strcpy(mask, slash);
+	} else {
+		strcpy(mask, "ff:ffffffffffffffff");
+	}
+
+	if (strlen(str) > FLOWER_OPTS_MAX)
+		return -1;
+	strcpy(key, str);
+
+	nest = addattr_nest(n, MAX_MSG, TCA_FLOWER_KEY_ENC_OPTS | NLA_F_NESTED);
+	err = flower_parse_pfcp_opt(key, n);
+	if (err)
+		return err;
+	addattr_nest_end(n, nest);
+
+	nest = addattr_nest(n, MAX_MSG,
+			    TCA_FLOWER_KEY_ENC_OPTS_MASK | NLA_F_NESTED);
+	err = flower_parse_pfcp_opt(mask, n);
 	if (err)
 		return err;
 	addattr_nest_end(n, nest);
@@ -1367,7 +1534,7 @@ static int flower_parse_mpls_lse(int *argc_p, char ***argv_p,
 
 			NEXT_ARG();
 			ret = get_u8(&ttl, *argv, 10);
-			if (ret < 0 || ttl & ~(MPLS_LS_TTL_MASK >> MPLS_LS_TTL_SHIFT)) {
+			if (ret < 0) {
 				fprintf(stderr, "Illegal \"ttl\"\n");
 				return -1;
 			}
@@ -1419,7 +1586,58 @@ static int flower_parse_mpls(int *argc_p, char ***argv_p, struct nlmsghdr *nlh)
 	return 0;
 }
 
-static int flower_parse_opt(struct filter_util *qu, char *handle,
+static int flower_parse_cfm(int *argc_p, char ***argv_p, __be16 eth_type,
+			    struct nlmsghdr *n)
+{
+	struct rtattr *cfm_attr;
+	char **argv = *argv_p;
+	int argc = *argc_p;
+	int ret;
+
+	if (eth_type != htons(ETH_P_CFM)) {
+		fprintf(stderr,
+			"Can't set attribute if ethertype isn't CFM\n");
+		return -1;
+	}
+
+	cfm_attr = addattr_nest(n, MAX_MSG, TCA_FLOWER_KEY_CFM | NLA_F_NESTED);
+
+	while (argc > 0) {
+		if (!strcmp(*argv, "mdl")) {
+			__u8 val;
+
+			NEXT_ARG();
+			ret = get_u8(&val, *argv, 10);
+			if (ret < 0) {
+				fprintf(stderr, "Illegal \"cfm md level\"\n");
+				return -1;
+			}
+			addattr8(n, MAX_MSG, TCA_FLOWER_KEY_CFM_MD_LEVEL, val);
+		} else if (!strcmp(*argv, "op")) {
+			__u8 val;
+
+			NEXT_ARG();
+			ret = get_u8(&val, *argv, 10);
+			if (ret < 0) {
+				fprintf(stderr, "Illegal \"cfm opcode\"\n");
+				return -1;
+			}
+			addattr8(n, MAX_MSG, TCA_FLOWER_KEY_CFM_OPCODE, val);
+		} else {
+			break;
+		}
+		argc--; argv++;
+	}
+
+	addattr_nest_end(n, cfm_attr);
+
+	*argc_p = argc;
+	*argv_p = argv;
+
+	return 0;
+}
+
+static int flower_parse_opt(const struct filter_util *qu, char *handle,
 			    int argc, char **argv, struct nlmsghdr *n)
 {
 	int ret;
@@ -1435,6 +1653,8 @@ static int flower_parse_opt(struct filter_util *qu, char *handle,
 	__u32 flags = 0;
 	__u32 mtf = 0;
 	__u32 mtf_mask = 0;
+	__u32 dst_flags = 0;
+	__u32 dst_flags_mask = 0;
 
 	if (handle) {
 		ret = get_u32(&t->tcm_handle, handle, 0);
@@ -1493,6 +1713,15 @@ static int flower_parse_opt(struct filter_util *qu, char *handle,
 				fprintf(stderr, "Illegal \"ip_flags\"\n");
 				return -1;
 			}
+		} else if (strcmp(*argv, "l2_miss") == 0) {
+			__u8 l2_miss;
+
+			NEXT_ARG();
+			if (get_u8(&l2_miss, *argv, 10)) {
+				fprintf(stderr, "Illegal \"l2_miss\"\n");
+				return -1;
+			}
+			addattr8(n, MAX_MSG, TCA_FLOWER_L2_MISS, l2_miss);
 		} else if (matches(*argv, "verbose") == 0) {
 			flags |= TCA_CLS_FLAGS_VERBOSE;
 		} else if (matches(*argv, "skip_hw") == 0) {
@@ -1720,7 +1949,7 @@ static int flower_parse_opt(struct filter_util *qu, char *handle,
 			}
 			mpls_format_old = true;
 			ret = get_u8(&ttl, *argv, 10);
-			if (ret < 0 || ttl & ~(MPLS_LS_TTL_MASK >> MPLS_LS_TTL_SHIFT)) {
+			if (ret < 0) {
 				fprintf(stderr, "Illegal \"mpls_ttl\"\n");
 				return -1;
 			}
@@ -1840,6 +2069,16 @@ static int flower_parse_opt(struct filter_util *qu, char *handle,
 				fprintf(stderr, "Illegal \"icmp code\"\n");
 				return -1;
 			}
+		} else if (!strcmp(*argv, "l2tpv3_sid")) {
+			NEXT_ARG();
+			ret = flower_parse_l2tpv3(*argv, ip_proto, n);
+			if (ret < 0)
+				return -1;
+		} else if (!strcmp(*argv, "spi")) {
+			NEXT_ARG();
+			ret = flower_parse_spi(*argv, ip_proto, n);
+			if (ret < 0)
+				return -1;
 		} else if (matches(*argv, "arp_tip") == 0) {
 			NEXT_ARG();
 			ret = flower_parse_arp_ip_addr(*argv, eth_type,
@@ -2015,6 +2254,24 @@ static int flower_parse_opt(struct filter_util *qu, char *handle,
 				fprintf(stderr, "Illegal \"gtp_opts\"\n");
 				return -1;
 			}
+		} else if (!strcmp(*argv, "pfcp_opts")) {
+			NEXT_ARG();
+			ret = flower_parse_enc_opts_pfcp(*argv, n);
+			if (ret < 0) {
+				fprintf(stderr, "Illegal \"pfcp_opts\"\n");
+				return -1;
+			}
+		} else if (!strcmp(*argv, "enc_flags")) {
+			NEXT_ARG();
+			ret = flower_parse_matching_flags(*argv,
+							  FLOWER_ENC_DST_FLAGS,
+							  &dst_flags,
+							  &dst_flags_mask);
+
+			if (ret < 0) {
+				fprintf(stderr, "Illegal \"enc_flags\"\n");
+				return -1;
+			}
 		} else if (matches(*argv, "action") == 0) {
 			NEXT_ARG();
 			ret = parse_action(&argc, &argv, TCA_FLOWER_ACT, n);
@@ -2022,6 +2279,12 @@ static int flower_parse_opt(struct filter_util *qu, char *handle,
 				fprintf(stderr, "Illegal \"action\"\n");
 				return -1;
 			}
+			continue;
+		} else if (!strcmp(*argv, "cfm")) {
+			NEXT_ARG();
+			ret = flower_parse_cfm(&argc, &argv, eth_type, n);
+			if (ret < 0)
+				return -1;
 			continue;
 		} else {
 			if (strcmp(*argv, "help") != 0)
@@ -2043,6 +2306,17 @@ parse_done:
 			return ret;
 
 		ret = addattr32(n, MAX_MSG, TCA_FLOWER_KEY_FLAGS_MASK, htonl(mtf_mask));
+		if (ret)
+			return ret;
+	}
+
+	if (dst_flags_mask) {
+		ret = addattr32(n, MAX_MSG, TCA_FLOWER_KEY_ENC_FLAGS,
+				htonl(dst_flags));
+		if (ret)
+			return ret;
+		ret = addattr32(n, MAX_MSG, TCA_FLOWER_KEY_ENC_FLAGS_MASK,
+				htonl(dst_flags_mask));
 		if (ret)
 			return ret;
 	}
@@ -2153,8 +2427,14 @@ static void flower_print_ip_proto(__u8 *p_ip_proto,
 		sprintf(out, "icmp");
 	else if (ip_proto == IPPROTO_ICMPV6)
 		sprintf(out, "icmpv6");
+	else if (ip_proto == IPPROTO_L2TP)
+		sprintf(out, "l2tp");
+	else if (ip_proto == IPPROTO_ESP)
+		sprintf(out, "esp");
+	else if (ip_proto == IPPROTO_AH)
+		sprintf(out, "ah");
 	else
-		sprintf(out, "%02x", ip_proto);
+		sprintf(out, "0x%02x", ip_proto);
 
 	print_nl();
 	print_string(PRINT_ANY, "ip_proto", "  ip_proto %s", out);
@@ -2499,6 +2779,29 @@ static void flower_print_gtp_opts(const char *name, struct rtattr *attr,
 	snprintf(strbuf, len, "%02x:%02x", pdu_type, qfi);
 }
 
+static void flower_print_pfcp_opts(const char *name, struct rtattr *attr,
+				   char *strbuf, int len)
+{
+	struct rtattr *tb[TCA_FLOWER_KEY_ENC_OPT_PFCP_MAX + 1];
+	struct rtattr *i = RTA_DATA(attr);
+	int rem = RTA_PAYLOAD(attr);
+	__be64 seid;
+	__u8 type;
+
+	parse_rtattr(tb, TCA_FLOWER_KEY_ENC_OPT_PFCP_MAX, i, rem);
+	type = rta_getattr_u8(tb[TCA_FLOWER_KEY_ENC_OPT_PFCP_TYPE]);
+	seid = rta_getattr_be64(tb[TCA_FLOWER_KEY_ENC_OPT_PFCP_SEID]);
+
+	open_json_array(PRINT_JSON, name);
+	open_json_object(NULL);
+	print_uint(PRINT_JSON, "type", NULL, type);
+	print_uint(PRINT_JSON, "seid", NULL, seid);
+	close_json_object();
+	close_json_array(PRINT_JSON, name);
+
+	snprintf(strbuf, len, "%02x:%llx", type, seid);
+}
+
 static void __attribute__((format(printf, 2, 0)))
 flower_print_enc_parts(const char *name, const char *namefrm,
 		       struct rtattr *attr, char *key, char *mask)
@@ -2590,6 +2893,18 @@ static void flower_print_enc_opts(const char *name, struct rtattr *attr,
 					      msk, len);
 
 		flower_print_enc_parts(name, "  gtp_opts %s", attr, key,
+				       msk);
+	} else if (key_tb[TCA_FLOWER_KEY_ENC_OPTS_PFCP]) {
+		flower_print_pfcp_opts("pfcp_opt_key",
+				key_tb[TCA_FLOWER_KEY_ENC_OPTS_PFCP],
+				key, len);
+
+		if (msk_tb[TCA_FLOWER_KEY_ENC_OPTS_PFCP])
+			flower_print_pfcp_opts("pfcp_opt_mask",
+				msk_tb[TCA_FLOWER_KEY_ENC_OPTS_PFCP],
+				msk, len);
+
+		flower_print_enc_parts(name, "  pfcp_opts %s", attr, key,
 				       msk);
 	}
 
@@ -2710,7 +3025,32 @@ static void flower_print_arp_op(const char *name,
 			       flower_print_arp_op_to_name);
 }
 
-static int flower_print_opt(struct filter_util *qu, FILE *f,
+static void flower_print_cfm(struct rtattr *attr)
+{
+	struct rtattr *tb[TCA_FLOWER_KEY_CFM_OPT_MAX + 1];
+
+	if (!attr || !(attr->rta_type & NLA_F_NESTED))
+		return;
+
+	parse_rtattr(tb, TCA_FLOWER_KEY_CFM_OPT_MAX, RTA_DATA(attr),
+		     RTA_PAYLOAD(attr));
+
+	print_nl();
+	print_string(PRINT_FP, NULL, "  cfm", NULL);
+	open_json_object("cfm");
+
+	if (tb[TCA_FLOWER_KEY_CFM_MD_LEVEL])
+		print_hhu(PRINT_ANY, "mdl", " mdl %u",
+			  rta_getattr_u8(tb[TCA_FLOWER_KEY_CFM_MD_LEVEL]));
+
+	if (tb[TCA_FLOWER_KEY_CFM_OPCODE])
+		print_hhu(PRINT_ANY, "op", " op %u",
+			  rta_getattr_u8(tb[TCA_FLOWER_KEY_CFM_OPCODE]));
+
+	close_json_object();
+}
+
+static int flower_print_opt(const struct filter_util *qu, FILE *f,
 			    struct rtattr *opt, __u32 handle)
 {
 	struct rtattr *tb[TCA_FLOWER_MAX + 1];
@@ -2880,6 +3220,22 @@ static int flower_print_opt(struct filter_util *qu, FILE *f,
 		flower_print_masked_u8("icmp_code", tb[nl_type],
 				       tb[nl_mask_type], NULL);
 
+	if (tb[TCA_FLOWER_KEY_L2TPV3_SID]) {
+		struct rtattr *attr = tb[TCA_FLOWER_KEY_L2TPV3_SID];
+
+		print_nl();
+		print_uint(PRINT_ANY, "l2tpv3_sid", "  l2tpv3_sid %u",
+			   rta_getattr_be32(attr));
+	}
+
+	if (tb[TCA_FLOWER_KEY_SPI]) {
+		struct rtattr *attr = tb[TCA_FLOWER_KEY_SPI];
+
+		print_nl();
+		print_hex(PRINT_ANY, "spi", "  spi 0x%x",
+			   rta_getattr_be32(attr));
+	}
+
 	flower_print_ip4_addr("arp_sip", tb[TCA_FLOWER_KEY_ARP_SIP],
 			     tb[TCA_FLOWER_KEY_ARP_SIP_MASK]);
 	flower_print_ip4_addr("arp_tip", tb[TCA_FLOWER_KEY_ARP_TIP],
@@ -2941,6 +3297,18 @@ static int flower_print_opt(struct filter_util *qu, FILE *f,
 				    tb[TCA_FLOWER_KEY_FLAGS],
 				    tb[TCA_FLOWER_KEY_FLAGS_MASK]);
 
+	flower_print_matching_flags("enc_flags", FLOWER_ENC_DST_FLAGS,
+				    tb[TCA_FLOWER_KEY_ENC_FLAGS],
+				    tb[TCA_FLOWER_KEY_ENC_FLAGS_MASK]);
+
+	if (tb[TCA_FLOWER_L2_MISS]) {
+		struct rtattr *attr = tb[TCA_FLOWER_L2_MISS];
+
+		print_nl();
+		print_uint(PRINT_ANY, "l2_miss", "  l2_miss %u",
+			   rta_getattr_u8(attr));
+	}
+
 	flower_print_ct_state(tb[TCA_FLOWER_KEY_CT_STATE],
 			      tb[TCA_FLOWER_KEY_CT_STATE_MASK]);
 	flower_print_ct_zone(tb[TCA_FLOWER_KEY_CT_ZONE],
@@ -2949,6 +3317,8 @@ static int flower_print_opt(struct filter_util *qu, FILE *f,
 			     tb[TCA_FLOWER_KEY_CT_MARK_MASK]);
 	flower_print_ct_label(tb[TCA_FLOWER_KEY_CT_LABELS],
 			      tb[TCA_FLOWER_KEY_CT_LABELS_MASK]);
+
+	flower_print_cfm(tb[TCA_FLOWER_KEY_CFM]);
 
 	close_json_object();
 

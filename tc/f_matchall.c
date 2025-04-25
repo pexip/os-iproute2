@@ -1,13 +1,8 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * f_matchall.c		Match-all Classifier
  *
- *		This program is free software; you can distribute it and/or
- *		modify it under the terms of the GNU General Public License
- *		as published by the Free Software Foundation; either version
- *		2 of the License, or (at your option) any later version.
- *
  * Authors:	Jiri Pirko <jiri@mellanox.com>, Yotam Gigi <yotamg@mellanox.com>
- *
  */
 
 #include <stdio.h>
@@ -36,7 +31,7 @@ static void explain(void)
 		"NOTE: CLASSID is parsed as hexadecimal input.\n");
 }
 
-static int matchall_parse_opt(struct filter_util *qu, char *handle,
+static int matchall_parse_opt(const struct filter_util *qu, char *handle,
 			   int argc, char **argv, struct nlmsghdr *n)
 {
 	struct tcmsg *t = NLMSG_DATA(n);
@@ -112,7 +107,7 @@ static int matchall_parse_opt(struct filter_util *qu, char *handle,
 	return 0;
 }
 
-static int matchall_print_opt(struct filter_util *qu, FILE *f,
+static int matchall_print_opt(const struct filter_util *qu, FILE *f,
 			   struct rtattr *opt, __u32 handle)
 {
 	struct rtattr *tb[TCA_MATCHALL_MAX+1];

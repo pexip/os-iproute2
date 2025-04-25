@@ -1,26 +1,12 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * ipaddrlabel.c	"ip addrlabel"
  *
  * Copyright (C)2007 USAGI/WIDE Project
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, see <http://www.gnu.org/licenses>.
- *
- *
  * Based on iprule.c.
  *
  * Authors:	YOSHIFUJI Hideaki <yoshfuji@linux-ipv6.org>
- *
  */
 
 #include <stdio.h>
@@ -60,6 +46,7 @@ int print_addrlabel(struct nlmsghdr *n, void *arg)
 	struct ifaddrlblmsg *ifal = NLMSG_DATA(n);
 	int len = n->nlmsg_len;
 	struct rtattr *tb[IFAL_MAX+1];
+	FILE *fp = (FILE *)arg;
 
 	if (n->nlmsg_type != RTM_NEWADDRLABEL && n->nlmsg_type != RTM_DELADDRLABEL)
 		return 0;
@@ -69,6 +56,8 @@ int print_addrlabel(struct nlmsghdr *n, void *arg)
 		return -1;
 
 	parse_rtattr(tb, IFAL_MAX, IFAL_RTA(ifal), len);
+
+	print_headers(fp, "[ADDRLABEL]");
 
 	open_json_object(NULL);
 	if (n->nlmsg_type == RTM_DELADDRLABEL)
@@ -127,6 +116,7 @@ static int ipaddrlabel_list(int argc, char **argv)
 	new_json_obj(json);
 	if (rtnl_dump_filter(&rth, print_addrlabel, stdout) < 0) {
 		fprintf(stderr, "Dump terminated\n");
+		delete_json_obj();
 		return 1;
 	}
 	delete_json_obj();

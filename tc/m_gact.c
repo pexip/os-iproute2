@@ -1,13 +1,8 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * m_gact.c		generic actions module
  *
- *		This program is free software; you can distribute it and/or
- *		modify it under the terms of the GNU General Public License
- *		as published by the Free Software Foundation; either version
- *		2 of the License, or (at your option) any later version.
- *
  * Authors:  J Hadi Salim (hadi@cyberus.ca)
- *
  */
 
 #include <stdio.h>
@@ -23,7 +18,7 @@
 #include "tc_util.h"
 #include <linux/tc_act/tc_gact.h>
 
-/* define to turn on probablity stuff */
+/* define to turn on probability stuff */
 
 #ifdef CONFIG_GACT_PROB
 static const char *prob_n2a(int p)
@@ -71,7 +66,7 @@ usage(void)
 }
 
 static int
-parse_gact(struct action_util *a, int *argc_p, char ***argv_p,
+parse_gact(const struct action_util *a, int *argc_p, char ***argv_p,
 	   int tca_id, struct nlmsghdr *n)
 {
 	int argc = *argc_p;
@@ -162,7 +157,7 @@ skip_args:
 }
 
 static int
-print_gact(struct action_util *au, FILE *f, struct rtattr *arg)
+print_gact(const struct action_util *au, FILE *f, struct rtattr *arg)
 {
 #ifdef CONFIG_GACT_PROB
 	struct tc_gact_p *pp = NULL;
@@ -183,7 +178,7 @@ print_gact(struct action_util *au, FILE *f, struct rtattr *arg)
 	}
 	p = RTA_DATA(tb[TCA_GACT_PARMS]);
 
-	print_action_control(f, "action ", p->action, "");
+	print_action_control("action ", p->action, "");
 #ifdef CONFIG_GACT_PROB
 	if (tb[TCA_GACT_PROB] != NULL) {
 		pp = RTA_DATA(tb[TCA_GACT_PROB]);
@@ -196,7 +191,7 @@ print_gact(struct action_util *au, FILE *f, struct rtattr *arg)
 	print_nl();
 	print_string(PRINT_ANY, "random_type", "\t random type %s",
 		     prob_n2a(pp->ptype));
-	print_action_control(f, " ", pp->paction, " ");
+	print_action_control(" ", pp->paction, " ");
 	print_int(PRINT_ANY, "val", "val %d", pp->pval);
 	close_json_object();
 #endif
@@ -208,7 +203,7 @@ print_gact(struct action_util *au, FILE *f, struct rtattr *arg)
 		if (tb[TCA_GACT_TM]) {
 			struct tcf_t *tm = RTA_DATA(tb[TCA_GACT_TM]);
 
-			print_tm(f, tm);
+			print_tm(tm);
 		}
 	}
 	print_nl();

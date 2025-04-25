@@ -1,13 +1,8 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * f_fw.c		FW filter.
  *
- *		This program is free software; you can redistribute it and/or
- *		modify it under the terms of the GNU General Public License
- *		as published by the Free Software Foundation; either version
- *		2 of the License, or (at your option) any later version.
- *
  * Authors:	Alexey Kuznetsov, <kuznet@ms2.inr.ac.ru>
- *
  */
 
 #include <stdio.h>
@@ -34,7 +29,7 @@ static void explain(void)
 		"		FWMASK is 0xffffffff by default.\n");
 }
 
-static int fw_parse_opt(struct filter_util *qu, char *handle, int argc, char **argv, struct nlmsghdr *n)
+static int fw_parse_opt(const struct filter_util *qu, char *handle, int argc, char **argv, struct nlmsghdr *n)
 {
 	struct tcmsg *t = NLMSG_DATA(n);
 	struct rtattr *tail;
@@ -117,7 +112,7 @@ static int fw_parse_opt(struct filter_util *qu, char *handle, int argc, char **a
 	return 0;
 }
 
-static int fw_print_opt(struct filter_util *qu, FILE *f, struct rtattr *opt, __u32 handle)
+static int fw_print_opt(const struct filter_util *qu, FILE *f, struct rtattr *opt, __u32 handle)
 {
 	struct rtattr *tb[TCA_FW_MAX+1];
 
@@ -129,30 +124,38 @@ static int fw_print_opt(struct filter_util *qu, FILE *f, struct rtattr *opt, __u
 	if (handle || tb[TCA_FW_MASK]) {
 		__u32 mark = 0, mask = 0;
 
+		open_json_object("fw");
 		if (handle)
 			mark = handle;
 		if (tb[TCA_FW_MASK] &&
-		    (mask = rta_getattr_u32(tb[TCA_FW_MASK])) != 0xFFFFFFFF)
-			fprintf(f, "handle 0x%x/0x%x ", mark, mask);
-		else
-			fprintf(f, "handle 0x%x ", handle);
+		    (mask = rta_getattr_u32(tb[TCA_FW_MASK])) != 0xFFFFFFFF) {
+			print_0xhex(PRINT_ANY, "mark", "handle 0x%x", mark);
+			print_0xhex(PRINT_ANY, "mask", "/0x%x ", mask);
+		} else {
+			print_0xhex(PRINT_ANY, "mark", "handle 0x%x ", mark);
+			print_0xhex(PRINT_JSON, "mask", NULL, 0xFFFFFFFF);
+		}
+		close_json_object();
 	}
 
 	if (tb[TCA_FW_CLASSID]) {
 		SPRINT_BUF(b1);
-		fprintf(f, "classid %s ", sprint_tc_classid(rta_getattr_u32(tb[TCA_FW_CLASSID]), b1));
+		print_string(PRINT_ANY, "classid", "classid %s ",
+			     sprint_tc_classid(
+				     rta_getattr_u32(tb[TCA_FW_CLASSID]), b1));
 	}
 
 	if (tb[TCA_FW_POLICE])
-		tc_print_police(f, tb[TCA_FW_POLICE]);
+		tc_print_police(tb[TCA_FW_POLICE]);
 	if (tb[TCA_FW_INDEV]) {
 		struct rtattr *idev = tb[TCA_FW_INDEV];
 
-		fprintf(f, "input dev %s ", rta_getattr_str(idev));
+		print_string(PRINT_ANY, "indev", "input dev %s ",
+			     rta_getattr_str(idev));
 	}
 
 	if (tb[TCA_FW_ACT]) {
-		fprintf(f, "\n");
+		print_nl();
 		tc_print_action(f, tb[TCA_FW_ACT], 0);
 	}
 	return 0;

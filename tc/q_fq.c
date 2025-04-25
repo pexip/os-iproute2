@@ -1,38 +1,8 @@
+// SPDX-License-Identifier: GPL-2.0 OR BSD-3-Clause
 /*
  * Fair Queue
  *
  *  Copyright (C) 2013-2015 Eric Dumazet <edumazet@google.com>
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions, and the following disclaimer,
- *    without modification.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in the
- *    documentation and/or other materials provided with the distribution.
- * 3. The names of the authors may not be used to endorse or promote products
- *    derived from this software without specific prior written permission.
- *
- * Alternatively, provided that this notice is retained in full, this
- * software may be distributed under the terms of the GNU General
- * Public License ("GPL") version 2, in which case the provisions of the
- * GPL apply INSTEAD OF those given above.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
- * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
- * OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
- * LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
- * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
- * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
- * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
- * DAMAGE.
- *
  */
 
 #include <stdio.h>
@@ -53,14 +23,17 @@ static void explain(void)
 	fprintf(stderr,
 		"Usage: ... fq	[ limit PACKETS ] [ flow_limit PACKETS ]\n"
 		"		[ quantum BYTES ] [ initial_quantum BYTES ]\n"
-		"		[ maxrate RATE  ] [ buckets NUMBER ]\n"
+		"		[ maxrate RATE ] [ buckets NUMBER ]\n"
 		"		[ [no]pacing ] [ refill_delay TIME ]\n"
+		"		[ bands 3 priomap P0 P1 ... P14 P15 ]\n"
+		"		[ weights W1 W2 W3 ]\n"
 		"		[ low_rate_threshold RATE ]\n"
 		"		[ orphan_mask MASK]\n"
 		"		[ timer_slack TIME]\n"
 		"		[ ce_threshold TIME ]\n"
 		"		[ horizon TIME ]\n"
-		"		[ horizon_{cap|drop} ]\n");
+		"		[ horizon_{cap|drop} ]\n"
+		"		[ offload_horizon TIME ]\n");
 }
 
 static unsigned int ilog2(unsigned int val)
@@ -75,9 +48,10 @@ static unsigned int ilog2(unsigned int val)
 	return res;
 }
 
-static int fq_parse_opt(struct qdisc_util *qu, int argc, char **argv,
+static int fq_parse_opt(const struct qdisc_util *qu, int argc, char **argv,
 			struct nlmsghdr *n, const char *dev)
 {
+	struct tc_prio_qopt prio2band;
 	unsigned int plimit;
 	unsigned int flow_plimit;
 	unsigned int quantum;
@@ -91,6 +65,7 @@ static int fq_parse_opt(struct qdisc_util *qu, int argc, char **argv,
 	unsigned int ce_threshold;
 	unsigned int timer_slack;
 	unsigned int horizon;
+	unsigned int offload_horizon;
 	__u8 horizon_drop = 255;
 	bool set_plimit = false;
 	bool set_flow_plimit = false;
@@ -104,6 +79,10 @@ static int fq_parse_opt(struct qdisc_util *qu, int argc, char **argv,
 	bool set_ce_threshold = false;
 	bool set_timer_slack = false;
 	bool set_horizon = false;
+	bool set_priomap = false;
+	bool set_weights = false;
+	bool set_offload_horizon = false;
+	int weights[FQ_BANDS];
 	int pacing = -1;
 	struct rtattr *tail;
 
@@ -179,6 +158,13 @@ static int fq_parse_opt(struct qdisc_util *qu, int argc, char **argv,
 				return -1;
 			}
 			set_horizon = true;
+		} else if (strcmp(*argv, "offload_horizon") == 0) {
+			NEXT_ARG();
+			if (get_time(&offload_horizon, *argv)) {
+				fprintf(stderr, "Illegal \"offload_horizon\"\n");
+				return -1;
+			}
+			set_offload_horizon = true;
 		} else if (strcmp(*argv, "defrate") == 0) {
 			NEXT_ARG();
 			if (strchr(*argv, '%')) {
@@ -223,6 +209,75 @@ static int fq_parse_opt(struct qdisc_util *qu, int argc, char **argv,
 			pacing = 1;
 		} else if (strcmp(*argv, "nopacing") == 0) {
 			pacing = 0;
+		} else if (strcmp(*argv, "bands") == 0) {
+			int idx;
+
+			if (set_priomap) {
+				fprintf(stderr, "Duplicate \"bands\"\n");
+				return -1;
+			}
+			memset(&prio2band, 0, sizeof(prio2band));
+			NEXT_ARG();
+			if (get_integer(&prio2band.bands, *argv, 10)) {
+				fprintf(stderr, "Illegal \"bands\"\n");
+				return -1;
+			}
+			if (prio2band.bands != 3) {
+				fprintf(stderr, "\"bands\" must be 3\n");
+				return -1;
+			}
+			NEXT_ARG();
+			if (strcmp(*argv, "priomap") != 0) {
+				fprintf(stderr, "\"priomap\" expected\n");
+				return -1;
+			}
+			for (idx = 0; idx <= TC_PRIO_MAX; ++idx) {
+				unsigned band;
+
+				if (!NEXT_ARG_OK()) {
+					fprintf(stderr, "Not enough elements in priomap\n");
+					return -1;
+				}
+				NEXT_ARG();
+				if (get_unsigned(&band, *argv, 10)) {
+					fprintf(stderr, "Illegal \"priomap\" element, number in [0..%u] expected\n",
+							prio2band.bands - 1);
+					return -1;
+				}
+				if (band >= prio2band.bands) {
+					fprintf(stderr, "\"priomap\" element %u too big\n", band);
+					return -1;
+				}
+				prio2band.priomap[idx] = band;
+			}
+			set_priomap = true;
+		} else if (strcmp(*argv, "weights") == 0) {
+			int idx;
+
+			if (set_weights) {
+				fprintf(stderr, "Duplicate \"weights\"\n");
+				return -1;
+			}
+			NEXT_ARG();
+			for (idx = 0; idx < FQ_BANDS; ++idx) {
+				int val;
+
+				if (!NEXT_ARG_OK()) {
+					fprintf(stderr, "Not enough elements in weights\n");
+					return -1;
+				}
+				NEXT_ARG();
+				if (get_integer(&val, *argv, 10)) {
+					fprintf(stderr, "Illegal \"weights\" element, positive number expected\n");
+					return -1;
+				}
+				if (val < FQ_MIN_WEIGHT) {
+					fprintf(stderr, "\"weight\" element %d too small\n", val);
+					return -1;
+				}
+				weights[idx] = val;
+			}
+			set_weights = true;
 		} else if (strcmp(*argv, "help") == 0) {
 			explain();
 			return -1;
@@ -273,20 +328,29 @@ static int fq_parse_opt(struct qdisc_util *qu, int argc, char **argv,
 	if (set_ce_threshold)
 		addattr_l(n, 1024, TCA_FQ_CE_THRESHOLD,
 			  &ce_threshold, sizeof(ce_threshold));
-    if (set_timer_slack)
+	if (set_timer_slack)
 		addattr_l(n, 1024, TCA_FQ_TIMER_SLACK,
 			  &timer_slack, sizeof(timer_slack));
-    if (set_horizon)
+	if (set_horizon)
 		addattr_l(n, 1024, TCA_FQ_HORIZON,
 			  &horizon, sizeof(horizon));
-    if (horizon_drop != 255)
+	if (horizon_drop != 255)
 		addattr_l(n, 1024, TCA_FQ_HORIZON_DROP,
 			  &horizon_drop, sizeof(horizon_drop));
+	if (set_priomap)
+		addattr_l(n, 1024, TCA_FQ_PRIOMAP,
+			  &prio2band, sizeof(prio2band));
+	if (set_weights)
+		addattr_l(n, 1024, TCA_FQ_WEIGHTS,
+			  weights, sizeof(weights));
+	if (set_offload_horizon)
+		addattr_l(n, 1024, TCA_FQ_OFFLOAD_HORIZON,
+			  &offload_horizon, sizeof(offload_horizon));
 	addattr_nest_end(n, tail);
 	return 0;
 }
 
-static int fq_print_opt(struct qdisc_util *qu, FILE *f, struct rtattr *opt)
+static int fq_print_opt(const struct qdisc_util *qu, FILE *f, struct rtattr *opt)
 {
 	struct rtattr *tb[TCA_FQ_MAX + 1];
 	unsigned int plimit, flow_plimit;
@@ -297,6 +361,7 @@ static int fq_print_opt(struct qdisc_util *qu, FILE *f, struct rtattr *opt)
 	unsigned int orphan_mask;
 	unsigned int ce_threshold;
 	unsigned int timer_slack;
+	__u32 offload_horizon;
 	unsigned int horizon;
 	__u8 horizon_drop;
 
@@ -335,6 +400,27 @@ static int fq_print_opt(struct qdisc_util *qu, FILE *f, struct rtattr *opt)
 		pacing = rta_getattr_u32(tb[TCA_FQ_RATE_ENABLE]);
 		if (pacing == 0)
 			print_bool(PRINT_ANY, "pacing", "nopacing ", false);
+	}
+	if (tb[TCA_FQ_PRIOMAP] &&
+	    RTA_PAYLOAD(tb[TCA_FQ_PRIOMAP]) >= sizeof(struct tc_prio_qopt)) {
+		struct tc_prio_qopt *prio2band = RTA_DATA(tb[TCA_FQ_PRIOMAP]);
+		int i;
+
+		print_uint(PRINT_ANY, "bands", "bands %u ", prio2band->bands);
+		open_json_array(PRINT_ANY, "priomap ");
+		for (i = 0; i <= TC_PRIO_MAX; i++)
+			print_uint(PRINT_ANY, NULL, "%d ", prio2band->priomap[i]);
+		close_json_array(PRINT_ANY, "");
+	}
+	if (tb[TCA_FQ_WEIGHTS] &&
+	    RTA_PAYLOAD(tb[TCA_FQ_WEIGHTS]) >= FQ_BANDS * sizeof(int)) {
+		const int *weights = RTA_DATA(tb[TCA_FQ_WEIGHTS]);
+		int i;
+
+		open_json_array(PRINT_ANY, "weights ");
+		for (i = 0; i < FQ_BANDS; ++i)
+			print_uint(PRINT_ANY, NULL, "%d ", weights[i]);
+		close_json_array(PRINT_ANY, "");
 	}
 	if (tb[TCA_FQ_QUANTUM] &&
 	    RTA_PAYLOAD(tb[TCA_FQ_QUANTUM]) >= sizeof(__u32)) {
@@ -415,10 +501,18 @@ static int fq_print_opt(struct qdisc_util *qu, FILE *f, struct rtattr *opt)
 			print_null(PRINT_ANY, "horizon_drop", "horizon_drop ", NULL);
 	}
 
+	if (tb[TCA_FQ_OFFLOAD_HORIZON] &&
+	    RTA_PAYLOAD(tb[TCA_FQ_OFFLOAD_HORIZON]) >= sizeof(__u32)) {
+		offload_horizon = rta_getattr_u32(tb[TCA_FQ_OFFLOAD_HORIZON]);
+		print_uint(PRINT_JSON, "offload_horizon", NULL, offload_horizon);
+		print_string(PRINT_FP, NULL, "offload_horizon %s ",
+			     sprint_time(offload_horizon, b1));
+	}
+
 	return 0;
 }
 
-static int fq_print_xstats(struct qdisc_util *qu, FILE *f,
+static int fq_print_xstats(const struct qdisc_util *qu, FILE *f,
 			   struct rtattr *xstats)
 {
 	struct tc_fq_qd_stats *st, _st;
@@ -438,6 +532,10 @@ static int fq_print_xstats(struct qdisc_util *qu, FILE *f,
 	print_uint(PRINT_ANY, "throttled", " throttled %u)",
 		   st->throttled_flows);
 
+	print_uint(PRINT_ANY, "band0_pkts", " band0_pkts %u", st->band_pkt_count[0]);
+	print_uint(PRINT_ANY, "band1_pkts", " band1_pkts %u", st->band_pkt_count[1]);
+	print_uint(PRINT_ANY, "band2_pkts", " band2_pkts %u", st->band_pkt_count[2]);
+
 	if (st->time_next_delayed_flow > 0) {
 		print_lluint(PRINT_JSON, "next_packet_delay", NULL,
 			     st->time_next_delayed_flow);
@@ -449,6 +547,10 @@ static int fq_print_xstats(struct qdisc_util *qu, FILE *f,
 	print_lluint(PRINT_ANY, "gc", "  gc %llu", st->gc_flows);
 	print_lluint(PRINT_ANY, "highprio", " highprio %llu",
 		     st->highprio_packets);
+
+	if (st->fastpath_packets)
+		print_lluint(PRINT_ANY, "fastpath", " fastpath %llu",
+			     st->fastpath_packets);
 
 	if (st->tcp_retrans)
 		print_lluint(PRINT_ANY, "retrans", " retrans %llu",
@@ -472,7 +574,10 @@ static int fq_print_xstats(struct qdisc_util *qu, FILE *f,
 			     st->flows_plimit);
 
 	if (st->pkts_too_long || st->allocation_errors ||
-	    st->horizon_drops || st->horizon_caps) {
+	    st->horizon_drops || st->horizon_caps ||
+	    st->band_drops[0] ||
+	    st->band_drops[1] ||
+	    st->band_drops[2]) {
 		print_nl();
 		if (st->pkts_too_long)
 			print_lluint(PRINT_ANY, "pkts_too_long",
@@ -490,6 +595,18 @@ static int fq_print_xstats(struct qdisc_util *qu, FILE *f,
 			print_lluint(PRINT_ANY, "horizon_caps",
 				     "  horizon_caps %llu",
 				     st->horizon_caps);
+		if (st->band_drops[0])
+			print_lluint(PRINT_ANY, "band0_drops",
+				     " band0_drops %llu",
+				     st->band_drops[0]);
+		if (st->band_drops[1])
+			print_lluint(PRINT_ANY, "band1_drops",
+				     " band1_drops %llu",
+				     st->band_drops[1]);
+		if (st->band_drops[2])
+			print_lluint(PRINT_ANY, "band2_drops",
+				     " band2_drops %llu",
+				     st->band_drops[2]);
 	}
 
 	return 0;

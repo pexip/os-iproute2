@@ -1,25 +1,9 @@
-/* $USAGI: $ */
-
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * Copyright (C)2004 USAGI/WIDE Project
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, see <http://www.gnu.org/licenses>.
- */
-/*
  * based on iproute.c
- */
-/*
+ *
  * Authors:
  *	Masahide NAKAMURA @USAGI
  */
@@ -56,16 +40,16 @@ static void usage(void)
 {
 	fprintf(stderr,
 		"Usage: ip xfrm state { add | update } ID [ ALGO-LIST ] [ mode MODE ]\n"
-		"        [ mark MARK [ mask MASK ] ] [ reqid REQID ] [ seq SEQ ]\n"
+		"        [ mark MARK [ mask MASK ] ] [ reqid REQID ] [ dir DIR ] [ seq SEQ ]\n"
 		"        [ replay-window SIZE ] [ replay-seq SEQ ] [ replay-oseq SEQ ]\n"
 		"        [ replay-seq-hi SEQ ] [ replay-oseq-hi SEQ ]\n"
 		"        [ flag FLAG-LIST ] [ sel SELECTOR ] [ LIMIT-LIST ] [ encap ENCAP ]\n"
 		"        [ coa ADDR[/PLEN] ] [ ctx CTX ] [ extra-flag EXTRA-FLAG-LIST ]\n"
-		"        [ offload [dev DEV] dir DIR ]\n"
+		"        [ offload [ crypto | packet ] dev DEV dir DIR ]\n"
 		"        [ output-mark OUTPUT-MARK [ mask MASK ] ]\n"
 		"        [ if_id IF_ID ] [ tfcpad LENGTH ]\n"
 		"Usage: ip xfrm state allocspi ID [ mode MODE ] [ mark MARK [ mask MASK ] ]\n"
-		"        [ reqid REQID ] [ seq SEQ ] [ min SPI max SPI ]\n"
+		"        [ reqid REQID ] [ dir DIR ] [ seq SEQ ] [ min SPI max SPI ]\n"
 		"Usage: ip xfrm state { delete | get } ID [ mark MARK [ mask MASK ] ]\n"
 		"Usage: ip xfrm state deleteall [ ID ] [ mode MODE ] [ reqid REQID ]\n"
 		"        [ flag FLAG-LIST ]\n"
@@ -267,22 +251,20 @@ static int xfrm_state_extra_flag_parse(__u32 *extra_flags, int *argcp, char ***a
 	return 0;
 }
 
-static int xfrm_offload_dir_parse(__u8 *dir, int *argcp, char ***argvp)
+static void xfrm_dir_parse(__u8 *dir, int *argcp, char ***argvp)
 {
 	int argc = *argcp;
 	char **argv = *argvp;
 
 	if (strcmp(*argv, "in") == 0)
-		*dir = XFRM_OFFLOAD_INBOUND;
+		*dir = XFRM_SA_DIR_IN;
 	else if (strcmp(*argv, "out") == 0)
-		*dir = 0;
+		*dir = XFRM_SA_DIR_OUT;
 	else
-		invarg("DIR value is invalid", *argv);
+		invarg("DIR value is not \"in\" or \"out\"", *argv);
 
 	*argcp = argc;
 	*argvp = argv;
-
-	return 0;
 }
 
 static int xfrm_state_modify(int cmd, unsigned int flags, int argc, char **argv)
@@ -307,7 +289,7 @@ static int xfrm_state_modify(int cmd, unsigned int flags, int argc, char **argv)
 	struct xfrm_user_offload xuo = {};
 	unsigned int ifindex = 0;
 	__u8 dir = 0;
-	bool is_offload = false;
+	bool is_offload = false, is_packet_offload = false;
 	__u32 replay_window = 0;
 	__u32 seq = 0, oseq = 0, seq_hi = 0, oseq_hi = 0;
 	char *idp = NULL;
@@ -424,24 +406,32 @@ static int xfrm_state_modify(int cmd, unsigned int flags, int argc, char **argv)
 			addattr_l(&req.n, sizeof(req.buf), XFRMA_SEC_CTX,
 				  (void *)&ctx, ctx.sctx.len);
 		} else if (strcmp(*argv, "offload") == 0) {
-			is_offload = true;
 			NEXT_ARG();
+			/* If user doesn't provide offload mode, treat it as
+			 * crypto one for the backward compatibility.
+			 */
+			if (strcmp(*argv, "crypto") == 0)
+				NEXT_ARG();
+			else if (strcmp(*argv, "packet") == 0) {
+				is_packet_offload = true;
+				NEXT_ARG();
+			}
+
 			if (strcmp(*argv, "dev") == 0) {
 				NEXT_ARG();
 				ifindex = ll_name_to_index(*argv);
-				if (!ifindex) {
-					invarg("value after \"offload dev\" is invalid", *argv);
-					is_offload = false;
-				}
-				NEXT_ARG();
-			}
+				if (!ifindex)
+					invarg("Invalid device name", *argv);
+			} else
+				invarg("Missing dev keyword", *argv);
+
+			NEXT_ARG();
 			if (strcmp(*argv, "dir") == 0) {
 				NEXT_ARG();
-				xfrm_offload_dir_parse(&dir, &argc, &argv);
-			} else {
-				invarg("value after \"offload dir\" is invalid", *argv);
-				is_offload = false;
-			}
+				xfrm_dir_parse(&dir, &argc, &argv);
+			} else
+				invarg("Missing DIR keyword", *argv);
+			is_offload = true;
 		} else if (strcmp(*argv, "output-mark") == 0) {
 			NEXT_ARG();
 			if (get_u32(&output_mark.v, *argv, 0))
@@ -465,6 +455,9 @@ static int xfrm_state_modify(int cmd, unsigned int flags, int argc, char **argv)
 			NEXT_ARG();
 			if (get_u32(&tfcpad, *argv, 0))
 				invarg("value after \"tfcpad\" is invalid", *argv);
+		} else if (strcmp(*argv, "dir") == 0) {
+			NEXT_ARG();
+			xfrm_dir_parse(&dir, &argc, &argv);
 		} else {
 			/* try to assume ALGO */
 			int type = xfrm_algotype_getbyname(*argv);
@@ -590,7 +583,7 @@ static int xfrm_state_modify(int cmd, unsigned int flags, int argc, char **argv)
 	}
 
 	if (req.xsinfo.flags & XFRM_STATE_ESN &&
-	    replay_window == 0) {
+	    replay_window == 0 && dir != XFRM_SA_DIR_OUT ) {
 		fprintf(stderr, "Error: esn flag set without replay-window.\n");
 		exit(-1);
 	}
@@ -604,7 +597,9 @@ static int xfrm_state_modify(int cmd, unsigned int flags, int argc, char **argv)
 
 	if (is_offload) {
 		xuo.ifindex = ifindex;
-		xuo.flags = dir;
+		xuo.flags = dir == XFRM_SA_DIR_IN ? XFRM_OFFLOAD_INBOUND : 0;
+		if (is_packet_offload)
+			xuo.flags |= XFRM_OFFLOAD_PACKET;
 		addattr_l(&req.n, sizeof(req.buf), XFRMA_OFFLOAD_DEV, &xuo,
 			  sizeof(xuo));
 	}
@@ -661,6 +656,7 @@ static int xfrm_state_modify(int cmd, unsigned int flags, int argc, char **argv)
 		case XFRM_MODE_BEET:
 			if (req.xsinfo.id.proto == IPPROTO_ESP)
 				break;
+			/* fallthrough */
 		default:
 			fprintf(stderr, "MODE value is invalid with XFRM-PROTO value \"%s\"\n",
 				strxf_xfrmproto(req.xsinfo.id.proto));
@@ -763,6 +759,14 @@ static int xfrm_state_modify(int cmd, unsigned int flags, int argc, char **argv)
 	if (rtnl_open_byproto(&rth, 0, NETLINK_XFRM) < 0)
 		exit(1);
 
+	if (dir) {
+		int r = addattr8(&req.n, sizeof(req.buf), XFRMA_SA_DIR, dir);
+		if (r < 0) {
+			fprintf(stderr, "XFRMA_SA_DIR failed\n");
+			exit(1);
+		}
+	}
+
 	if (req.xsinfo.family == AF_UNSPEC)
 		req.xsinfo.family = AF_INET;
 
@@ -792,6 +796,7 @@ static int xfrm_state_allocspi(int argc, char **argv)
 	char *maxp = NULL;
 	struct xfrm_mark mark = {0, 0};
 	struct nlmsghdr *answer;
+	__u8 dir = 0;
 
 	while (argc > 0) {
 		if (strcmp(*argv, "mode") == 0) {
@@ -823,6 +828,9 @@ static int xfrm_state_allocspi(int argc, char **argv)
 
 			if (get_u32(&req.xspi.max, *argv, 0))
 				invarg("value after \"max\" is invalid", *argv);
+		} else if (strcmp(*argv, "dir") == 0) {
+			NEXT_ARG();
+			xfrm_dir_parse(&dir, &argc, &argv);
 		} else {
 			/* try to assume ID */
 			if (idp)
@@ -873,6 +881,15 @@ static int xfrm_state_allocspi(int argc, char **argv)
 		 */
 		if (req.xspi.info.id.proto == IPPROTO_COMP)
 			req.xspi.max = 0xffff;
+	}
+
+	if (dir) {
+		int r = addattr8(&req.n, sizeof(req.buf), XFRMA_SA_DIR, dir);
+
+		if (r < 0) {
+			fprintf(stderr, "XFRMA_SA_DIR failed\n");
+			exit(1);
+		}
 	}
 
 	if (mark.m & mark.v) {
@@ -1028,7 +1045,7 @@ int xfrm_state_print(struct nlmsghdr *n, void *arg)
 	return __do_xfrm_state_print(n, arg, false);
 }
 
-int xfrm_state_print_nokeys(struct nlmsghdr *n, void *arg)
+static int xfrm_state_print_nokeys(struct nlmsghdr *n, void *arg)
 {
 	return __do_xfrm_state_print(n, arg, true);
 }

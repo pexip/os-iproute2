@@ -1,10 +1,6 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * q_qfq.c	QFQ.
- *
- *		This program is free software; you can redistribute it and/or
- *		modify it under the terms of the GNU General Public License
- *		as published by the Free Software Foundation; either version
- *		2 of the License, or (at your option) any later version.
  *
  * Authors:	Stephen Hemminger <shemminger@vyatta.com>
  *		Fabio Checconi <fabio@gandalf.sssup.it>
@@ -34,7 +30,7 @@ static void explain_class(void)
 	fprintf(stderr, "Usage: ... qfq weight NUMBER maxpkt BYTES\n");
 }
 
-static int qfq_parse_opt(struct qdisc_util *qu, int argc, char **argv,
+static int qfq_parse_opt(const struct qdisc_util *qu, int argc, char **argv,
 			 struct nlmsghdr *n, const char *dev)
 {
 	if (argc > 0) {
@@ -47,7 +43,7 @@ static int qfq_parse_opt(struct qdisc_util *qu, int argc, char **argv,
 	return 0;
 }
 
-static int qfq_parse_class_opt(struct qdisc_util *qu, int argc, char **argv,
+static int qfq_parse_class_opt(const struct qdisc_util *qu, int argc, char **argv,
 			       struct nlmsghdr *n, const char *dev)
 {
 	struct rtattr *tail;
@@ -84,7 +80,7 @@ static int qfq_parse_class_opt(struct qdisc_util *qu, int argc, char **argv,
 	return 0;
 }
 
-static int qfq_print_opt(struct qdisc_util *qu, FILE *f, struct rtattr *opt)
+static int qfq_print_opt(const struct qdisc_util *qu, FILE *f, struct rtattr *opt)
 {
 	struct rtattr *tb[TCA_QFQ_MAX + 1];
 

@@ -1,10 +1,6 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * e_bpf.c	BPF exec proxy
- *
- *		This program is free software; you can distribute it and/or
- *		modify it under the terms of the GNU General Public License
- *		as published by the Free Software Foundation; either version
- *		2 of the License, or (at your option) any later version.
  *
  * Authors:	Daniel Borkmann <daniel@iogearbox.net>
  */
@@ -53,7 +49,7 @@ static int bpf_num_env_entries(void)
 	return num;
 }
 
-static int parse_bpf(struct exec_util *eu, int argc, char **argv)
+static int parse_bpf(const struct exec_util *eu, int argc, char **argv)
 {
 	char **argv_run = argv_default, **envp_run, *tmp;
 	int ret, i, env_old, env_num, env_map;

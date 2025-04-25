@@ -1,13 +1,8 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * ipvrf.c	"ip vrf"
  *
- *		This program is free software; you can redistribute it and/or
- *		modify it under the terms of the GNU General Public License
- *		as published by the Free Software Foundation; either version
- *		2 of the License, or (at your option) any later version.
- *
  * Authors:	David Ahern <dsa@cumulusnetworks.com>
- *
  */
 
 #include <sys/types.h>
@@ -29,6 +24,7 @@
 #include "utils.h"
 #include "ip_common.h"
 #include "bpf_util.h"
+#include "selinux.h"
 
 #define CGRP_PROC_FILE  "/cgroup.procs"
 
@@ -257,7 +253,8 @@ static int prog_load(int idx)
 	};
 
 	return bpf_program_load(BPF_PROG_TYPE_CGROUP_SOCK, prog, sizeof(prog),
-			        "GPL", bpf_log_buf, sizeof(bpf_log_buf));
+				"GPL", bpf_log_buf, sizeof(bpf_log_buf),
+				false);
 }
 
 static int vrf_configure_cgroup(const char *path, int ifindex)
@@ -457,6 +454,11 @@ static int ipvrf_exec(int argc, char **argv)
 	}
 	if (argc < 2) {
 		fprintf(stderr, "No command specified\n");
+		return -1;
+	}
+
+	if (is_selinux_enabled() && setexecfilecon(argv[1], "ifconfig_t")) {
+		fprintf(stderr, "setexecfilecon for \"%s\" failed\n", argv[1]);
 		return -1;
 	}
 

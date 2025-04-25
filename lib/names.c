@@ -1,11 +1,6 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * names.c		db names
- *
- *		This program is free software; you can redistribute it and/or
- *		modify it under the terms of the GNU General Public License
- *		as published by the Free Software Foundation; either version
- *		2 of the License, or (at your option) any later version.
- *
  */
 
 #include <stdio.h>
@@ -60,6 +55,10 @@ struct db_names *db_names_alloc(void)
 
 	db->size = MAX_ENTRIES;
 	db->hash = calloc(db->size, sizeof(struct db_entry *));
+	if (!db->hash) {
+		free(db);
+		return NULL;
+	}
 
 	return db;
 }

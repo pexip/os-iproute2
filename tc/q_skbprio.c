@@ -1,13 +1,8 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * q_skbprio.c		SKB PRIORITY QUEUE.
  *
- *		This program is free software; you can redistribute it and/or
- *		modify it under the terms of the GNU General Public License
- *		as published by the Free Software Foundation; either version
- *		2 of the License, or (at your option) any later version.
- *
  * Authors:	Nishanth Devarajan, <ndev2021@gmail.com>
- *
  */
 
 #include <stdio.h>
@@ -28,7 +23,7 @@ static void explain(void)
 	fprintf(stderr, "Usage: ... <skbprio> [ limit NUMBER ]\n");
 }
 
-static int skbprio_parse_opt(struct qdisc_util *qu, int argc, char **argv,
+static int skbprio_parse_opt(const struct qdisc_util *qu, int argc, char **argv,
 			     struct nlmsghdr *n, const char *dev)
 {
 	int ok = 0;
@@ -63,7 +58,7 @@ static int skbprio_parse_opt(struct qdisc_util *qu, int argc, char **argv,
 	return 0;
 }
 
-static int skbprio_print_opt(struct qdisc_util *qu, FILE *f, struct rtattr *opt)
+static int skbprio_print_opt(const struct qdisc_util *qu, FILE *f, struct rtattr *opt)
 {
 	struct tc_skbprio_qopt *qopt;
 

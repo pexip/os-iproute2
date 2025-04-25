@@ -45,10 +45,11 @@ static void usage(void)
 		"              [ state STATE ] [ dynamic ] ]\n"
 		"       bridge fdb get [ to ] LLADDR [ br BRDEV ] { brport | dev } DEV\n"
 		"              [ vlan VID ] [ vni VNI ] [ self ] [ master ] [ dynamic ]\n"
-		"       bridge fdb flush dev DEV [ brport DEV ] [ vlan VID ]\n"
-		"              [ self ] [ master ] [ [no]permanent | [no]static | [no]dynamic ]\n"
+		"       bridge fdb flush dev DEV [ brport DEV ] [ vlan VID ] [ src_vni VNI ]\n"
+		"              [ nhid NHID ] [ vni VNI ] [ port PORT ] [ dst IPADDR ] [ self ]\n"
+		"	       [ master ] [ [no]permanent | [no]static | [no]dynamic ]\n"
 		"              [ [no]added_by_user ] [ [no]extern_learn ] [ [no]sticky ]\n"
-		"              [ [no]offloaded ]\n");
+		"              [ [no]offloaded ] [ [no]router ]\n");
 	exit(-1);
 }
 
@@ -93,7 +94,7 @@ static int state_a2n(unsigned int *s, const char *arg)
 	return 0;
 }
 
-static void fdb_print_flags(FILE *fp, unsigned int flags)
+static void fdb_print_flags(FILE *fp, unsigned int flags, __u32 ext_flags)
 {
 	open_json_array(PRINT_JSON,
 			is_json_context() ?  "flags" : "");
@@ -115,6 +116,9 @@ static void fdb_print_flags(FILE *fp, unsigned int flags)
 
 	if (flags & NTF_STICKY)
 		print_string(PRINT_ANY, NULL, "%s ", "sticky");
+
+	if (ext_flags & NTF_EXT_LOCKED)
+		print_string(PRINT_ANY, NULL, "%s ", "locked");
 
 	close_json_array(PRINT_JSON, NULL);
 }
@@ -144,6 +148,7 @@ int print_fdb(struct nlmsghdr *n, void *arg)
 	struct ndmsg *r = NLMSG_DATA(n);
 	int len = n->nlmsg_len;
 	struct rtattr *tb[NDA_MAX+1];
+	__u32 ext_flags = 0;
 	__u16 vid = 0;
 
 	if (n->nlmsg_type != RTM_NEWNEIGH && n->nlmsg_type != RTM_DELNEIGH) {
@@ -169,6 +174,9 @@ int print_fdb(struct nlmsghdr *n, void *arg)
 
 	parse_rtattr(tb, NDA_MAX, NDA_RTA(r),
 		     n->nlmsg_len - NLMSG_LENGTH(sizeof(*r)));
+
+	if (tb[NDA_FLAGS_EXT])
+		ext_flags = rta_getattr_u32(tb[NDA_FLAGS_EXT]);
 
 	if (tb[NDA_VLAN])
 		vid = rta_getattr_u16(tb[NDA_VLAN]);
@@ -268,7 +276,7 @@ int print_fdb(struct nlmsghdr *n, void *arg)
 	if (show_stats && tb[NDA_CACHEINFO])
 		fdb_print_stats(fp, RTA_DATA(tb[NDA_CACHEINFO]));
 
-	fdb_print_flags(fp, r->ndm_flags);
+	fdb_print_flags(fp, r->ndm_flags, ext_flags);
 
 
 	if (tb[NDA_MASTER])
@@ -689,10 +697,17 @@ static int fdb_flush(int argc, char **argv)
 	};
 	unsigned short ndm_state_mask = 0;
 	unsigned short ndm_flags_mask = 0;
-	short vid = -1, port_ifidx = -1;
+	short vid = -1, brport_ifidx = -1;
+	char *d = NULL, *brport = NULL;
 	unsigned short ndm_flags = 0;
 	unsigned short ndm_state = 0;
-	char *d = NULL, *port = NULL;
+	unsigned long src_vni = ~0;
+	unsigned long vni = ~0;
+	unsigned long port = 0;
+	inet_prefix dst;
+	int dst_ok = 0;
+	__u32 nhid = 0;
+	char *endptr;
 
 	while (argc > 0) {
 		if (strcmp(*argv, "dev") == 0) {
@@ -744,19 +759,63 @@ static int fdb_flush(int argc, char **argv)
 		} else if (strcmp(*argv, "nooffloaded") == 0) {
 			ndm_flags &= ~NTF_OFFLOADED;
 			ndm_flags_mask |= NTF_OFFLOADED;
+		} else if (strcmp(*argv, "router") == 0) {
+			ndm_flags |= NTF_ROUTER;
+			ndm_flags_mask |= NTF_ROUTER;
+		} else if (strcmp(*argv, "norouter") == 0) {
+			ndm_flags &= ~NTF_ROUTER;
+			ndm_flags_mask |= NTF_ROUTER;
 		} else if (strcmp(*argv, "brport") == 0) {
-			if (port)
+			if (brport)
 				duparg2("brport", *argv);
 			NEXT_ARG();
-			port = *argv;
+			brport = *argv;
 		} else if (strcmp(*argv, "vlan") == 0) {
 			if (vid >= 0)
 				duparg2("vlan", *argv);
 			NEXT_ARG();
 			vid = atoi(*argv);
+		} else if (strcmp(*argv, "src_vni") == 0) {
+			NEXT_ARG();
+			src_vni = strtoul(*argv, &endptr, 0);
+			if ((endptr && *endptr) ||
+			    (src_vni >> 24) || src_vni == ULONG_MAX)
+				invarg("invalid src VNI\n", *argv);
+		} else if (strcmp(*argv, "nhid") == 0) {
+			NEXT_ARG();
+			if (get_u32(&nhid, *argv, 0))
+				invarg("\"nid\" value is invalid\n", *argv);
+		} else if (strcmp(*argv, "vni") == 0) {
+			NEXT_ARG();
+			vni = strtoul(*argv, &endptr, 0);
+			if ((endptr && *endptr) ||
+			    (vni >> 24) || vni == ULONG_MAX)
+				invarg("invalid VNI\n", *argv);
+		} else if (strcmp(*argv, "port") == 0) {
+			NEXT_ARG();
+			port = strtoul(*argv, &endptr, 0);
+			if (endptr && *endptr) {
+				struct servent *pse;
+
+				pse = getservbyname(*argv, "udp");
+				if (!pse)
+					invarg("invalid port\n", *argv);
+				port = ntohs(pse->s_port);
+			} else if (port > 0xffff)
+				invarg("invalid port\n", *argv);
+		} else if (strcmp(*argv, "dst") == 0) {
+			NEXT_ARG();
+			if (dst_ok)
+				duparg2("dst", *argv);
+			get_addr(&dst, *argv, preferred_family);
+			dst_ok = 1;
+		} else if (strcmp(*argv, "help") == 0) {
+			NEXT_ARG();
 		} else {
-			if (strcmp(*argv, "help") == 0)
-				NEXT_ARG();
+			fprintf(stderr, "bridge fdb: unknown command \"%s\"?\n",
+				*argv);
+			usage();
+			return -1;
 		}
 		argc--; argv++;
 	}
@@ -772,11 +831,11 @@ static int fdb_flush(int argc, char **argv)
 		return -1;
 	}
 
-	if (port) {
-		port_ifidx = ll_name_to_index(port);
-		if (port_ifidx == 0) {
+	if (brport) {
+		brport_ifidx = ll_name_to_index(brport);
+		if (brport_ifidx == 0) {
 			fprintf(stderr, "Cannot find bridge port device \"%s\"\n",
-				port);
+				brport);
 			return -1;
 		}
 	}
@@ -792,10 +851,24 @@ static int fdb_flush(int argc, char **argv)
 
 	req.ndm.ndm_flags = ndm_flags;
 	req.ndm.ndm_state = ndm_state;
-	if (port_ifidx > -1)
-		addattr32(&req.n, sizeof(req), NDA_IFINDEX, port_ifidx);
+	if (brport_ifidx > -1)
+		addattr32(&req.n, sizeof(req), NDA_IFINDEX, brport_ifidx);
 	if (vid > -1)
 		addattr16(&req.n, sizeof(req), NDA_VLAN, vid);
+	if (src_vni != ~0)
+		addattr32(&req.n, sizeof(req), NDA_SRC_VNI, src_vni);
+	if (nhid > 0)
+		addattr32(&req.n, sizeof(req), NDA_NH_ID, nhid);
+	if (vni != ~0)
+		addattr32(&req.n, sizeof(req), NDA_VNI, vni);
+	if (port) {
+		unsigned short dport;
+
+		dport = htons((unsigned short)port);
+		addattr16(&req.n, sizeof(req), NDA_PORT, dport);
+	}
+	if (dst_ok)
+		addattr_l(&req.n, sizeof(req), NDA_DST, &dst.data, dst.bytelen);
 	if (ndm_flags_mask)
 		addattr8(&req.n, sizeof(req), NDA_NDM_FLAGS_MASK,
 			 ndm_flags_mask);

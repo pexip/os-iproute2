@@ -20,18 +20,6 @@ struct gate_entry {
 	int32_t maxoctets;
 };
 
-#define CLOCKID_INVALID (-1)
-static const struct clockid_table {
-	const char *name;
-	clockid_t clockid;
-} clockt_map[] = {
-	{ "REALTIME", CLOCK_REALTIME },
-	{ "TAI", CLOCK_TAI },
-	{ "BOOTTIME", CLOCK_BOOTTIME },
-	{ "MONOTONIC", CLOCK_MONOTONIC },
-	{ NULL }
-};
-
 static void explain(void)
 {
 	fprintf(stderr,
@@ -68,44 +56,15 @@ static void explain_entry_format(void)
 	fprintf(stderr, "Usage: sched-entry <open | close> <interval> [ <interval ipv> <octets max bytes> ]\n");
 }
 
-static int parse_gate(struct action_util *a, int *argc_p, char ***argv_p,
+static int parse_gate(const struct action_util *a, int *argc_p, char ***argv_p,
 		      int tca_id, struct nlmsghdr *n);
-static int print_gate(struct action_util *au, FILE *f, struct rtattr *arg);
+static int print_gate(const struct action_util *au, FILE *f, struct rtattr *arg);
 
 struct action_util gate_action_util = {
 	.id = "gate",
 	.parse_aopt = parse_gate,
 	.print_aopt = print_gate,
 };
-
-static int get_clockid(__s32 *val, const char *arg)
-{
-	const struct clockid_table *c;
-
-	if (strcasestr(arg, "CLOCK_") != NULL)
-		arg += sizeof("CLOCK_") - 1;
-
-	for (c = clockt_map; c->name; c++) {
-		if (strcasecmp(c->name, arg) == 0) {
-			*val = c->clockid;
-			return 0;
-		}
-	}
-
-	return -1;
-}
-
-static const char *get_clock_name(clockid_t clockid)
-{
-	const struct clockid_table *c;
-
-	for (c = clockt_map; c->name; c++) {
-		if (clockid == c->clockid)
-			return c->name;
-	}
-
-	return "invalid";
-}
 
 static int get_gate_state(__u8 *val, const char *arg)
 {
@@ -176,7 +135,7 @@ static void free_entries(struct list_head *gate_entries)
 	}
 }
 
-static int parse_gate(struct action_util *a, int *argc_p, char ***argv_p,
+static int parse_gate(const struct action_util *a, int *argc_p, char ***argv_p,
 		      int tca_id, struct nlmsghdr *n)
 {
 	struct tc_gate parm = {.action = TC_ACT_PIPE};
@@ -482,7 +441,7 @@ static int print_gate_list(struct rtattr *list)
 	return 0;
 }
 
-static int print_gate(struct action_util *au, FILE *f, struct rtattr *arg)
+static int print_gate(const struct action_util *au, FILE *f, struct rtattr *arg)
 {
 	struct tc_gate *parm;
 	struct rtattr *tb[TCA_GATE_MAX + 1];
@@ -558,7 +517,7 @@ static int print_gate(struct action_util *au, FILE *f, struct rtattr *arg)
 	if (tb[TCA_GATE_ENTRY_LIST])
 		print_gate_list(tb[TCA_GATE_ENTRY_LIST]);
 
-	print_action_control(f, "\t", parm->action, "");
+	print_action_control("\t", parm->action, "");
 
 	print_uint(PRINT_ANY, "index", "\n\t index %u", parm->index);
 	print_int(PRINT_ANY, "ref", " ref %d", parm->refcnt);
@@ -568,7 +527,7 @@ static int print_gate(struct action_util *au, FILE *f, struct rtattr *arg)
 		if (tb[TCA_GATE_TM]) {
 			struct tcf_t *tm = RTA_DATA(tb[TCA_GATE_TM]);
 
-			print_tm(f, tm);
+			print_tm(tm);
 		}
 	}
 

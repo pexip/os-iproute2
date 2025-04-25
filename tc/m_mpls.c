@@ -72,7 +72,7 @@ static bool check_double_action(unsigned int action, const char *arg)
 	return true;
 }
 
-static int parse_mpls(struct action_util *a, int *argc_p, char ***argv_p,
+static int parse_mpls(const struct action_util *a, int *argc_p, char ***argv_p,
 		      int tca_id, struct nlmsghdr *n)
 {
 	struct tc_mpls parm = {};
@@ -90,6 +90,9 @@ static int parse_mpls(struct action_util *a, int *argc_p, char ***argv_p,
 		return -1;
 
 	NEXT_ARG();
+
+	if (strcmp(*argv, "index") == 0)
+		goto skip_args;
 
 	while (argc > 0) {
 		if (matches(*argv, "pop") == 0) {
@@ -164,6 +167,7 @@ static int parse_mpls(struct action_util *a, int *argc_p, char ***argv_p,
 
 	if (argc) {
 		if (matches(*argv, "index") == 0) {
+skip_args:
 			NEXT_ARG();
 			if (get_u32(&parm.index, *argv, 10))
 				invarg("illegal index", *argv);
@@ -207,7 +211,7 @@ static int parse_mpls(struct action_util *a, int *argc_p, char ***argv_p,
 	return 0;
 }
 
-static int print_mpls(struct action_util *au, FILE *f, struct rtattr *arg)
+static int print_mpls(const struct action_util *au, FILE *f, struct rtattr *arg)
 {
 	struct rtattr *tb[TCA_MPLS_MAX + 1];
 	struct tc_mpls *parm;
@@ -268,7 +272,7 @@ static int print_mpls(struct action_util *au, FILE *f, struct rtattr *arg)
 		}
 		break;
 	}
-	print_action_control(f, " ", parm->action, "");
+	print_action_control(" ", parm->action, "");
 
 	print_nl();
 	print_uint(PRINT_ANY, "index", "\t index %u", parm->index);
@@ -279,7 +283,7 @@ static int print_mpls(struct action_util *au, FILE *f, struct rtattr *arg)
 		if (tb[TCA_MPLS_TM]) {
 			struct tcf_t *tm = RTA_DATA(tb[TCA_MPLS_TM]);
 
-			print_tm(f, tm);
+			print_tm(tm);
 		}
 	}
 

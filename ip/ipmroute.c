@@ -1,13 +1,8 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * ipmroute.c		"ip mroute".
  *
- *		This program is free software; you can redistribute it and/or
- *		modify it under the terms of the GNU General Public License
- *		as published by the Free Software Foundation; either version
- *		2 of the License, or (at your option) any later version.
- *
  * Authors:	Alexey Kuznetsov, <kuznet@ms2.inr.ac.ru>
- *
  */
 
 #include <stdio.h>
@@ -101,6 +96,8 @@ int print_mroute(struct nlmsghdr *n, void *arg)
 
 	if (inet_addr_match_rta(&filter.msrc, tb[RTA_SRC]))
 		return 0;
+
+	print_headers(fp, "[MROUTE]");
 
 	family = get_real_family(r->rtm_type, r->rtm_family);
 
@@ -274,7 +271,7 @@ static int mroute_list(int argc, char **argv)
 			id = *argv;
 		} else if (matches(*argv, "from") == 0) {
 			NEXT_ARG();
-			if (get_prefix(&filter.msrc, *argv, family))
+			if (get_prefix(&filter.msrc, *argv, preferred_family))
 				invarg("from value is invalid\n", *argv);
 		} else {
 			if (strcmp(*argv, "to") == 0) {
@@ -282,7 +279,7 @@ static int mroute_list(int argc, char **argv)
 			}
 			if (matches(*argv, "help") == 0)
 				usage();
-			if (get_prefix(&filter.mdst, *argv, family))
+			if (get_prefix(&filter.mdst, *argv, preferred_family))
 				invarg("to value is invalid\n", *argv);
 		}
 		argc--; argv++;

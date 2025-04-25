@@ -1,14 +1,9 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * iproute_lwtunnel.c
  *
- *		This program is free software; you can redistribute it and/or
- *		modify it under the terms of the GNU General Public License
- *		as published by the Free Software Foundation; either version
- *		2 of the License, or (at your option) any later version.
- *
  * Authors:	Roopa Prabhu, <roopa@cumulusnetworks.com>
  *		Thomas Graf <tgraf@suug.ch>
- *
  */
 
 #include <stdio.h>
@@ -37,7 +32,7 @@
 #include <linux/ioam6.h>
 #include <linux/ioam6_iptunnel.h>
 
-static const char *format_encap_type(int type)
+static const char *format_encap_type(uint16_t type)
 {
 	switch (type) {
 	case LWTUNNEL_ENCAP_MPLS:
@@ -67,7 +62,7 @@ static const char *format_encap_type(int type)
 
 static void encap_type_usage(void)
 {
-	int i;
+	uint16_t i;
 
 	fprintf(stderr, "Usage: ip route ... encap TYPE [ OPTIONS ] [...]\n");
 
@@ -78,7 +73,7 @@ static void encap_type_usage(void)
 	exit(-1);
 }
 
-static int read_encap_type(const char *name)
+static uint16_t read_encap_type(const char *name)
 {
 	if (strcmp(name, "mpls") == 0)
 		return LWTUNNEL_ENCAP_MPLS;
@@ -145,7 +140,7 @@ static const char *seg6_mode_types[] = {
 
 static const char *format_seg6mode_type(int mode)
 {
-	if (mode < 0 || mode > ARRAY_SIZE(seg6_mode_types))
+	if (mode < 0 || mode >= ARRAY_SIZE(seg6_mode_types))
 		return "<unknown>";
 
 	return seg6_mode_types[mode];
@@ -357,14 +352,25 @@ static void print_encap_ioam6(FILE *fp, struct rtattr *encap)
 	print_uint(PRINT_ANY, "freqn", "/%u ", freq_n);
 
 	mode = rta_getattr_u8(tb[IOAM6_IPTUNNEL_MODE]);
-	if (!tb[IOAM6_IPTUNNEL_DST] && mode != IOAM6_IPTUNNEL_MODE_INLINE)
+	if ((tb[IOAM6_IPTUNNEL_SRC] && mode == IOAM6_IPTUNNEL_MODE_INLINE) ||
+	    (!tb[IOAM6_IPTUNNEL_DST] && mode != IOAM6_IPTUNNEL_MODE_INLINE))
 		return;
 
 	print_string(PRINT_ANY, "mode", "mode %s ", format_ioam6mode_type(mode));
 
-	if (mode != IOAM6_IPTUNNEL_MODE_INLINE)
-		print_string(PRINT_ANY, "tundst", "tundst %s ",
-			     rt_addr_n2a_rta(AF_INET6, tb[IOAM6_IPTUNNEL_DST]));
+	if (mode != IOAM6_IPTUNNEL_MODE_INLINE) {
+		if (tb[IOAM6_IPTUNNEL_SRC]) {
+			print_color_string(PRINT_ANY, COLOR_INET6,
+					   "tunsrc", "tunsrc %s ",
+					   rt_addr_n2a_rta(AF_INET6,
+							   tb[IOAM6_IPTUNNEL_SRC]));
+		}
+
+		print_color_string(PRINT_ANY, COLOR_INET6,
+				   "tundst", "tundst %s ",
+				   rt_addr_n2a_rta(AF_INET6,
+						   tb[IOAM6_IPTUNNEL_DST]));
+	}
 
 	trace = RTA_DATA(tb[IOAM6_IPTUNNEL_TRACE]);
 
@@ -839,14 +845,15 @@ static void print_encap_xfrm(FILE *fp, struct rtattr *encap)
 void lwt_print_encap(FILE *fp, struct rtattr *encap_type,
 			  struct rtattr *encap)
 {
-	int et;
+	uint16_t et;
 
 	if (!encap_type)
 		return;
 
 	et = rta_getattr_u16(encap_type);
-
-	print_string(PRINT_ANY, "encap", " encap %s ", format_encap_type(et));
+	open_json_object("encap");
+	print_string(PRINT_ANY, "encap_type", " encap %s ",
+		     format_encap_type(et));
 
 	switch (et) {
 	case LWTUNNEL_ENCAP_MPLS:
@@ -880,6 +887,7 @@ void lwt_print_encap(FILE *fp, struct rtattr *encap_type,
 		print_encap_xfrm(fp, encap);
 		break;
 	}
+	close_json_object();
 }
 
 static struct ipv6_sr_hdr *parse_srh(char *segbuf, int hmac, bool encap)
@@ -903,6 +911,9 @@ static struct ipv6_sr_hdr *parse_srh(char *segbuf, int hmac, bool encap)
 		srhlen += 40;
 
 	srh = malloc(srhlen);
+	if (srh == NULL)
+		return NULL;
+
 	memset(srh, 0, srhlen);
 
 	srh->hdrlen = (srhlen >> 3) - 1;
@@ -938,14 +949,14 @@ static int parse_encap_seg6(struct rtattr *rta, size_t len, int *argcp,
 			    char ***argvp)
 {
 	int mode_ok = 0, segs_ok = 0, hmac_ok = 0;
-	struct seg6_iptunnel_encap *tuninfo;
+	struct seg6_iptunnel_encap *tuninfo = NULL;
 	struct ipv6_sr_hdr *srh;
 	char **argv = *argvp;
 	char segbuf[1024] = "";
 	int argc = *argcp;
 	int encap = -1;
 	__u32 hmac = 0;
-	int ret = 0;
+	int ret = -1;
 	int srhlen;
 
 	while (argc > 0) {
@@ -964,7 +975,7 @@ static int parse_encap_seg6(struct rtattr *rta, size_t len, int *argcp,
 				invarg("\"segs\" provided before \"mode\"\n",
 				       *argv);
 
-			strlcpy(segbuf, *argv, 1024);
+			strlcpy(segbuf, *argv, sizeof(segbuf));
 		} else if (strcmp(*argv, "hmac") == 0) {
 			NEXT_ARG();
 			if (hmac_ok++)
@@ -977,9 +988,13 @@ static int parse_encap_seg6(struct rtattr *rta, size_t len, int *argcp,
 	}
 
 	srh = parse_srh(segbuf, hmac, encap);
+	if (srh == NULL)
+		goto out;
 	srhlen = (srh->hdrlen + 1) << 3;
 
 	tuninfo = malloc(sizeof(*tuninfo) + srhlen);
+	if (tuninfo == NULL)
+		goto out;
 	memset(tuninfo, 0, sizeof(*tuninfo) + srhlen);
 
 	tuninfo->mode = encap;
@@ -987,13 +1002,12 @@ static int parse_encap_seg6(struct rtattr *rta, size_t len, int *argcp,
 	memcpy(tuninfo->srh, srh, srhlen);
 
 	if (rta_addattr_l(rta, len, SEG6_IPTUNNEL_SRH, tuninfo,
-			  sizeof(*tuninfo) + srhlen)) {
-		ret = -1;
+			  sizeof(*tuninfo) + srhlen))
 		goto out;
-	}
 
 	*argcp = argc + 1;
 	*argvp = argv - 1;
+	ret = 0;
 
 out:
 	free(tuninfo);
@@ -1017,6 +1031,8 @@ static struct ipv6_rpl_sr_hdr *parse_rpl_srh(char *segbuf)
 	srhlen = 8 + 16 * nsegs;
 
 	srh = calloc(1, srhlen);
+	if (srh == NULL)
+		return NULL;
 
 	srh->hdrlen = (srhlen >> 3) - 1;
 	srh->type = 3;
@@ -1050,7 +1066,7 @@ static int parse_encap_rpl(struct rtattr *rta, size_t len, int *argcp,
 			if (segs_ok++)
 				duparg2("segs", *argv);
 
-			strlcpy(segbuf, *argv, 1024);
+			strlcpy(segbuf, *argv, sizeof(segbuf));
 		} else {
 			break;
 		}
@@ -1106,11 +1122,12 @@ static int parse_encap_ioam6(struct rtattr *rta, size_t len, int *argcp,
 	int ns_found = 0, argc = *argcp;
 	__u16 trace_ns, trace_size = 0;
 	struct ioam6_trace_hdr *trace;
+	inet_prefix saddr, daddr;
 	char **argv = *argvp;
 	__u32 trace_type = 0;
 	__u32 freq_k, freq_n;
 	char buf[16] = {0};
-	inet_prefix addr;
+	bool has_src;
 	__u8 mode;
 
 	if (strcmp(*argv, "freq") != 0) {
@@ -1153,6 +1170,23 @@ static int parse_encap_ioam6(struct rtattr *rta, size_t len, int *argcp,
 		NEXT_ARG();
 	}
 
+	if (strcmp(*argv, "tunsrc") != 0) {
+		has_src = false;
+	} else {
+		has_src = true;
+
+		if (mode == IOAM6_IPTUNNEL_MODE_INLINE)
+			invarg("Inline mode does not need tunsrc", *argv);
+
+		NEXT_ARG();
+
+		get_addr(&saddr, *argv, AF_INET6);
+		if (saddr.family != AF_INET6 || saddr.bytelen != 16)
+			invarg("Invalid IPv6 address for tunsrc", *argv);
+
+		NEXT_ARG();
+	}
+
 	if (strcmp(*argv, "tundst") != 0) {
 		if (mode != IOAM6_IPTUNNEL_MODE_INLINE)
 			missarg("tundst");
@@ -1162,8 +1196,8 @@ static int parse_encap_ioam6(struct rtattr *rta, size_t len, int *argcp,
 
 		NEXT_ARG();
 
-		get_addr(&addr, *argv, AF_INET6);
-		if (addr.family != AF_INET6 || addr.bytelen != 16)
+		get_addr(&daddr, *argv, AF_INET6);
+		if (daddr.family != AF_INET6 || daddr.bytelen != 16)
 			invarg("Invalid IPv6 address for tundst", *argv);
 
 		NEXT_ARG();
@@ -1234,8 +1268,10 @@ static int parse_encap_ioam6(struct rtattr *rta, size_t len, int *argcp,
 	if (rta_addattr32(rta, len, IOAM6_IPTUNNEL_FREQ_K, freq_k) ||
 	    rta_addattr32(rta, len, IOAM6_IPTUNNEL_FREQ_N, freq_n) ||
 	    rta_addattr8(rta, len, IOAM6_IPTUNNEL_MODE, mode) ||
+	    (mode != IOAM6_IPTUNNEL_MODE_INLINE && has_src &&
+	     rta_addattr_l(rta, len, IOAM6_IPTUNNEL_SRC, &saddr.data, saddr.bytelen)) ||
 	    (mode != IOAM6_IPTUNNEL_MODE_INLINE &&
-	     rta_addattr_l(rta, len, IOAM6_IPTUNNEL_DST, &addr.data, addr.bytelen)) ||
+	     rta_addattr_l(rta, len, IOAM6_IPTUNNEL_DST, &daddr.data, daddr.bytelen)) ||
 	    rta_addattr_l(rta, len, IOAM6_IPTUNNEL_TRACE, trace, sizeof(*trace))) {
 		free(trace);
 		return -1;
@@ -1471,8 +1507,7 @@ static int parse_encap_seg6local(struct rtattr *rta, size_t len, int *argcp,
 			NEXT_ARG();
 			if (segs_ok++)
 				duparg2("segs", *argv);
-			strncpy(segbuf, *argv, 1024);
-			segbuf[1023] = 0;
+			strlcpy(segbuf, *argv, sizeof(segbuf));
 			if (!NEXT_ARG_OK())
 				break;
 			NEXT_ARG();
@@ -2224,11 +2259,8 @@ int lwt_parse_encap(struct rtattr *rta, size_t len, int *argcp, char ***argvp,
 		invarg("\"encap type\" value is invalid\n", *argv);
 
 	NEXT_ARG();
-	if (argc <= 1) {
-		fprintf(stderr,
-			"Error: unexpected end of line after \"encap\"\n");
-		exit(-1);
-	}
+	if (argc <= 1)
+		missarg("encap type");
 
 	nest = rta_nest(rta, len, encap_attr);
 	switch (type) {

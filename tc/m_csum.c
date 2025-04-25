@@ -1,10 +1,6 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * m_csum.c	checksum updating action
- *
- *		This program is free software; you can distribute it and/or
- *		modify it under the terms of the GNU General Public License
- *		as published by the Free Software Foundation; either version
- *		2 of the License, or (at your option) any later version.
  *
  * Authors: Gregoire Baron <baronchon@n7mm.org>
  */
@@ -85,7 +81,7 @@ parse_csum_args(int *argc_p, char ***argv_p, struct tc_csum *sel)
 }
 
 static int
-parse_csum(struct action_util *a, int *argc_p,
+parse_csum(const struct action_util *a, int *argc_p,
 	   char ***argv_p, int tca_id, struct nlmsghdr *n)
 {
 	struct tc_csum sel = {};
@@ -98,7 +94,9 @@ parse_csum(struct action_util *a, int *argc_p,
 	while (argc > 0) {
 		if (matches(*argv, "csum") == 0) {
 			NEXT_ARG();
-			if (parse_csum_args(&argc, &argv, &sel)) {
+			if (strcmp(*argv, "index") == 0) {
+				goto skip_args;
+			} else if (parse_csum_args(&argc, &argv, &sel)) {
 				fprintf(stderr, "Illegal csum construct (%s)\n",
 					*argv);
 				explain();
@@ -127,6 +125,7 @@ parse_csum(struct action_util *a, int *argc_p,
 
 	if (argc) {
 		if (matches(*argv, "index") == 0) {
+skip_args:
 			NEXT_ARG();
 			if (get_u32(&sel.index, *argv, 10)) {
 				fprintf(stderr, "Illegal \"index\" (%s) <csum>\n",
@@ -149,7 +148,7 @@ parse_csum(struct action_util *a, int *argc_p,
 }
 
 static int
-print_csum(struct action_util *au, FILE *f, struct rtattr *arg)
+print_csum(const struct action_util *au, FILE *f, struct rtattr *arg)
 {
 	struct tc_csum *sel;
 
@@ -205,7 +204,7 @@ print_csum(struct action_util *au, FILE *f, struct rtattr *arg)
 		 uflag_4, uflag_5, uflag_6, uflag_7);
 	print_string(PRINT_ANY, "csum", "(%s) ", buf);
 
-	print_action_control(f, "action ", sel->action, _SL_);
+	print_action_control("action ", sel->action, _SL_);
 	print_uint(PRINT_ANY, "index", "\tindex %u", sel->index);
 	print_int(PRINT_ANY, "ref", " ref %d", sel->refcnt);
 	print_int(PRINT_ANY, "bind", " bind %d", sel->bindcnt);
@@ -214,7 +213,7 @@ print_csum(struct action_util *au, FILE *f, struct rtattr *arg)
 		if (tb[TCA_CSUM_TM]) {
 			struct tcf_t *tm = RTA_DATA(tb[TCA_CSUM_TM]);
 
-			print_tm(f, tm);
+			print_tm(tm);
 		}
 	}
 	print_nl();

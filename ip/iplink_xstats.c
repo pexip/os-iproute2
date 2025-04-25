@@ -1,10 +1,6 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * iplink_stats.c       Extended statistics commands
- *
- *              This program is free software; you can redistribute it and/or
- *              modify it under the terms of the GNU General Public License
- *              as published by the Free Software Foundation; either version
- *              2 of the License, or (at your option) any later version.
  *
  * Authors:     Nikolay Aleksandrov <nikolay@cumulusnetworks.com>
  */
@@ -67,7 +63,7 @@ int iplink_ifla_xstats(int argc, char **argv)
 
 	if (rtnl_statsdump_req_filter(&rth, AF_UNSPEC, filt_mask,
 				      NULL, NULL) < 0) {
-		perror("Cannont send dump request");
+		perror("Cannot send dump request");
 		return -1;
 	}
 

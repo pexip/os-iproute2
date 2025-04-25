@@ -1,13 +1,8 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * fs.c         filesystem APIs
  *
- *		This program is free software; you can redistribute it and/or
- *		modify it under the terms of the GNU General Public License
- *		as published by the Free Software Foundation; either version
- *		2 of the License, or (at your option) any later version.
- *
  * Authors:	David Ahern <dsa@cumulusnetworks.com>
- *
  */
 
 #include <sys/types.h>
@@ -46,7 +41,7 @@ static int name_to_handle_at(int dirfd, const char *pathname,
 	struct file_handle *handle, int *mount_id, int flags)
 {
 	return syscall(__NR_name_to_handle_at, dirfd, pathname, handle,
-	               mount_id, flags);
+		       mount_id, flags);
 }
 
 static int open_by_handle_at(int mount_fd, struct file_handle *handle, int flags)
@@ -228,7 +223,8 @@ char *get_cgroup2_path(__u64 id, bool full)
 
 	fd = open_by_handle_at(mnt_fd, fhp, 0);
 	if (fd < 0) {
-		fprintf(stderr, "Failed to open cgroup2 by ID\n");
+		if (errno != ESTALE)
+			fprintf(stderr, "Failed to open cgroup2 by ID\n");
 		goto out;
 	}
 
@@ -357,8 +353,10 @@ int get_task_name(pid_t pid, char *name, size_t len)
 	if (!f)
 		return -1;
 
-	if (!fgets(name, len, f))
+	if (!fgets(name, len, f)) {
+		fclose(f);
 		return -1;
+	}
 
 	/* comm ends in \n, get rid of it */
 	name[strcspn(name, "\n")] = '\0';

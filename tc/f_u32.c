@@ -1,16 +1,13 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * q_u32.c		U32 filter.
- *
- *		This program is free software; you can u32istribute it and/or
- *		modify it under the terms of the GNU General Public License
- *		as published by the Free Software Foundation; either version
- *		2 of the License, or (at your option) any later version.
  *
  * Authors:	Alexey Kuznetsov, <kuznet@ms2.inr.ac.ru>
  *		Match mark added by Catalin(ux aka Dino) BOIE <catab at umbrella.ro> [5 nov 2004]
  *
  */
 
+#include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -91,6 +88,7 @@ static char *sprint_u32_handle(__u32 handle, char *buf)
 	if (htid) {
 		int l = snprintf(b, bsize, "%x:", htid>>20);
 
+		assert(l > 0 && l < bsize);
 		bsize -= l;
 		b += l;
 	}
@@ -98,12 +96,14 @@ static char *sprint_u32_handle(__u32 handle, char *buf)
 		if (hash) {
 			int l = snprintf(b, bsize, "%x", hash);
 
+			assert(l > 0 && l < bsize);
 			bsize -= l;
 			b += l;
 		}
 		if (nodeid) {
 			int l = snprintf(b, bsize, ":%x", nodeid);
 
+			assert(l > 0 && l < bsize);
 			bsize -= l;
 			b += l;
 		}
@@ -663,7 +663,7 @@ static int parse_mark(int *argc_p, char ***argv_p, struct nlmsghdr *n)
 	struct tc_u32_mark mark;
 
 	if (argc <= 1)
-		return -1;
+		missarg("mark");
 
 	if (get_u32(&mark.val, *argv, 0)) {
 		fprintf(stderr, "Illegal \"mark\" value\n");
@@ -820,7 +820,7 @@ static int parse_hashkey(int *argc_p, char ***argv_p, struct tc_u32_sel *sel)
 	return 0;
 }
 
-static void print_ipv4(FILE *f, const struct tc_u32_key *key)
+static void print_ipv4(const struct tc_u32_key *key)
 {
 	char abuf[256];
 
@@ -832,12 +832,12 @@ static void print_ipv4(FILE *f, const struct tc_u32_key *key)
 			print_nl();
 			print_uint(PRINT_ANY, "ip_ihl", "  match IP ihl %u",
 				   ntohl(key->val) >> 24);
-			return;
+			break;
 		case 0x00ff0000:
 			print_nl();
 			print_0xhex(PRINT_ANY, "ip_dsfield", "  match IP dsfield %#x",
 				    ntohl(key->val) >> 16);
-			return;
+			break;
 		}
 		break;
 	case 8:
@@ -845,7 +845,6 @@ static void print_ipv4(FILE *f, const struct tc_u32_key *key)
 			print_nl();
 			print_int(PRINT_ANY, "ip_protocol", "  match IP protocol %d",
 				  ntohl(key->val) >> 16);
-			return;
 		}
 		break;
 	case 12:
@@ -868,7 +867,6 @@ static void print_ipv4(FILE *f, const struct tc_u32_key *key)
 				print_string(PRINT_ANY, "address", "%s", addr);
 				print_int(PRINT_ANY, "prefixlen", "/%d", bits);
 				close_json_object();
-				return;
 			}
 		}
 		break;
@@ -878,26 +876,26 @@ static void print_ipv4(FILE *f, const struct tc_u32_key *key)
 		case 0x0000ffff:
 			print_uint(PRINT_ANY, "dport", "match dport %u",
 				   ntohl(key->val) & 0xffff);
-			return;
+			break;
 		case 0xffff0000:
 			print_nl();
 			print_uint(PRINT_ANY, "sport", "  match sport %u",
 				   ntohl(key->val) >> 16);
-			return;
+			break;
 		case 0xffffffff:
 			print_nl();
 			print_uint(PRINT_ANY, "dport", "  match dport %u, ",
 				   ntohl(key->val) & 0xffff);
 			print_uint(PRINT_ANY, "sport", "match sport %u",
 				   ntohl(key->val) >> 16);
-			return;
+			break;
 		}
 		/* XXX: Default print_raw */
 	}
 	close_json_object();
 }
 
-static void print_ipv6(FILE *f, const struct tc_u32_key *key)
+static void print_ipv6(const struct tc_u32_key *key)
 {
 	char abuf[256];
 
@@ -909,12 +907,12 @@ static void print_ipv6(FILE *f, const struct tc_u32_key *key)
 			print_nl();
 			print_uint(PRINT_ANY, "ip_ihl", "  match IP ihl %u",
 				   ntohl(key->val) >> 24);
-			return;
+			break;
 		case 0x00ff0000:
 			print_nl();
 			print_0xhex(PRINT_ANY, "ip_dsfield", "  match IP dsfield %#x",
 				    ntohl(key->val) >> 16);
-			return;
+			break;
 		}
 		break;
 	case 8:
@@ -922,7 +920,6 @@ static void print_ipv6(FILE *f, const struct tc_u32_key *key)
 			print_nl();
 			print_int(PRINT_ANY, "ip_protocol", "  match IP protocol %d",
 				  ntohl(key->val) >> 16);
-			return;
 		}
 		break;
 	case 12:
@@ -945,7 +942,6 @@ static void print_ipv6(FILE *f, const struct tc_u32_key *key)
 				print_string(PRINT_ANY, "address", "%s", addr);
 				print_int(PRINT_ANY, "prefixlen", "/%d", bits);
 				close_json_object();
-				return;
 			}
 		}
 		break;
@@ -956,11 +952,11 @@ static void print_ipv6(FILE *f, const struct tc_u32_key *key)
 			print_nl();
 			print_uint(PRINT_ANY, "sport", "  match sport %u",
 				   ntohl(key->val) & 0xffff);
-			return;
+			break;
 		case 0xffff0000:
 			print_uint(PRINT_ANY, "dport", "match dport %u",
 				   ntohl(key->val) >> 16);
-			return;
+			break;
 		case 0xffffffff:
 			print_nl();
 			print_uint(PRINT_ANY, "sport", "  match sport %u, ",
@@ -968,14 +964,14 @@ static void print_ipv6(FILE *f, const struct tc_u32_key *key)
 			print_uint(PRINT_ANY, "dport", "match dport %u",
 				   ntohl(key->val) >> 16);
 
-			return;
+			break;
 		}
 		/* XXX: Default print_raw */
 	}
 	close_json_object();
 }
 
-static void print_raw(FILE *f, const struct tc_u32_key *key)
+static void print_raw(const struct tc_u32_key *key)
 {
 	open_json_object("match");
 	print_nl();
@@ -989,14 +985,14 @@ static void print_raw(FILE *f, const struct tc_u32_key *key)
 static const struct {
 	__u16 proto;
 	__u16 pad;
-	void (*pprinter)(FILE *f, const struct tc_u32_key *key);
+	void (*pprinter)(const struct tc_u32_key *key);
 } u32_pprinters[] = {
 	{0,	   0, print_raw},
 	{ETH_P_IP, 0, print_ipv4},
 	{ETH_P_IPV6, 0, print_ipv6},
 };
 
-static void show_keys(FILE *f, const struct tc_u32_key *key)
+static void show_keys(const struct tc_u32_key *key)
 {
 	int i = 0;
 
@@ -1006,7 +1002,7 @@ static void show_keys(FILE *f, const struct tc_u32_key *key)
 	for (i = 0; i < ARRAY_SIZE(u32_pprinters); i++) {
 		if (u32_pprinters[i].proto == ntohs(f_proto)) {
 show_k:
-			u32_pprinters[i].pprinter(f, key);
+			u32_pprinters[i].pprinter(key);
 			return;
 		}
 	}
@@ -1022,7 +1018,7 @@ static __u32 u32_hash_fold(struct tc_u32_key *key)
 	return ntohl(key->val & key->mask) >> fshift;
 }
 
-static int u32_parse_opt(struct filter_util *qu, char *handle,
+static int u32_parse_opt(const struct filter_util *qu, char *handle,
 			 int argc, char **argv, struct nlmsghdr *n)
 {
 	struct {
@@ -1236,7 +1232,7 @@ static int u32_parse_opt(struct filter_util *qu, char *handle,
 	return 0;
 }
 
-static int u32_print_opt(struct filter_util *qu, FILE *f, struct rtattr *opt,
+static int u32_print_opt(const struct filter_util *qu, FILE *f, struct rtattr *opt,
 			 __u32 handle)
 {
 	struct rtattr *tb[TCA_U32_MAX + 1];
@@ -1277,7 +1273,7 @@ static int u32_print_opt(struct filter_util *qu, FILE *f, struct rtattr *opt,
 	if (tb[TCA_U32_CLASSID]) {
 		__u32 classid = rta_getattr_u32(tb[TCA_U32_CLASSID]);
 		SPRINT_BUF(b1);
-		if (sel && (sel->flags & TC_U32_TERMINAL))
+		if (!sel || !(sel->flags & TC_U32_TERMINAL))
 			print_string(PRINT_FP, NULL, "*", NULL);
 
 		print_string(PRINT_ANY, "flowid", "flowid %s ",
@@ -1308,7 +1304,7 @@ static int u32_print_opt(struct filter_util *qu, FILE *f, struct rtattr *opt,
 
 	if (tb[TCA_U32_PCNT]) {
 		if (RTA_PAYLOAD(tb[TCA_U32_PCNT])  < sizeof(*pf)) {
-			fprintf(f, "Broken perf counters\n");
+			fprintf(stderr, "Broken perf counters\n");
 			return -1;
 		}
 		pf = RTA_DATA(tb[TCA_U32_PCNT]);
@@ -1323,7 +1319,7 @@ static int u32_print_opt(struct filter_util *qu, FILE *f, struct rtattr *opt,
 		struct tc_u32_mark *mark = RTA_DATA(tb[TCA_U32_MARK]);
 
 		if (RTA_PAYLOAD(tb[TCA_U32_MARK]) < sizeof(*mark)) {
-			fprintf(f, "\n  Invalid mark (kernel&iproute2 mismatch)\n");
+			fprintf(stderr, "Invalid mark (kernel&iproute2 mismatch)\n");
 		} else {
 			print_nl();
 			print_0xhex(PRINT_ANY, "fwmark_value", "  mark 0x%04x ", mark->val);
@@ -1337,7 +1333,7 @@ static int u32_print_opt(struct filter_util *qu, FILE *f, struct rtattr *opt,
 			int i;
 
 			for (i = 0; i < sel->nkeys; i++) {
-				show_keys(f, sel->keys + i);
+				show_keys(sel->keys + i);
 				if (show_stats && NULL != pf)
 					print_u64(PRINT_ANY, "success", " (success %llu ) ",
 						  pf->kcnts[i]);
@@ -1346,7 +1342,7 @@ static int u32_print_opt(struct filter_util *qu, FILE *f, struct rtattr *opt,
 
 		if (sel->flags & (TC_U32_VAROFFSET | TC_U32_OFFSET)) {
 			print_nl();
-			print_string(PRINT_ANY, NULL, "%s", "    offset ");
+			print_string(PRINT_FP, NULL, "    offset ", NULL);
 			if (sel->flags & TC_U32_VAROFFSET) {
 				print_hex(PRINT_ANY, "offset_mask", "%04x", ntohs(sel->offmask));
 				print_int(PRINT_ANY, "offset_shift", ">>%d ", sel->offshift);
@@ -1369,7 +1365,7 @@ static int u32_print_opt(struct filter_util *qu, FILE *f, struct rtattr *opt,
 
 	if (tb[TCA_U32_POLICE]) {
 		print_nl();
-		tc_print_police(f, tb[TCA_U32_POLICE]);
+		tc_print_police(tb[TCA_U32_POLICE]);
 	}
 
 	if (tb[TCA_U32_INDEV]) {
