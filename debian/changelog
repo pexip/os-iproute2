@@ -1,3 +1,9 @@
+iproute2 (6.14.0-3+pexip25u1) pexip-trixie; urgency=medium
+
+  * Initial trixie build
+
+ -- Mark Hymers <mark.hymers@pexip.com>  Tue, 29 Apr 2025 22:34:24 +0100
+
 iproute2 (6.14.0-3) unstable; urgency=medium
 
   * autopkgtest: remove build-essential and dpkg-dev deps, add gcc
