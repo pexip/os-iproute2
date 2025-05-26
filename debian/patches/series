@@ -1,6 +1,1 @@
 0001-Add-moo-feature.patch
-0002-color-Introduce-and-use-default_color_opt-function.patch
-0003-color-Handle-NO_COLOR-environment-variable-in-defaul.patch
-0004-color-Assume-background-is-dark-if-unknown.patch
-0005-color-Do-not-use-dark-blue-in-dark-background-palett.patch
-0006-nstat-NULL-Dereference-when-no-entries-specified.patch

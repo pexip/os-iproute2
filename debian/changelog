@@ -1,3 +1,12 @@
+iproute2 (6.15.0-1) unstable; urgency=medium
+
+  * Update upstream source from tag 'upstream/6.15.0'
+    (Closes: #1106321)
+  * Drop all backported patches, merged upstream
+  * d/copyright: use GPL URL instead of old FSF postal address
+
+ -- Luca Boccassi <bluca@debian.org>  Tue, 27 May 2025 00:16:26 +0100
+
 iproute2 (6.14.0-3) unstable; urgency=medium
 
   * autopkgtest: remove build-essential and dpkg-dev deps, add gcc
